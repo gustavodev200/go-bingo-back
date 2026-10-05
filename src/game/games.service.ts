@@ -109,10 +109,14 @@ export class GamesService {
           this.random,
         );
         if (next === null) {
-          await tx.game.update({
-            where: { id: gameId },
+          // Condicional: não sobrescreve um estado que claim() ou cancel()
+          // já tenham decidido (bingo no último número, ou sala cancelada)
+          // enquanto este tick ainda estava lendo o estado antigo.
+          const finished = await tx.game.updateMany({
+            where: { id: gameId, status: 'IN_PROGRESS' },
             data: { status: 'FINISHED', finishedAt: new Date() },
           });
+          if (finished.count !== 1) return { kind: 'stopped' } as const;
           await tx.room.update({
             where: { id: game.roomId },
             data: { status: 'WAITING' },
@@ -254,6 +258,14 @@ export class GamesService {
     });
     if (!game)
       throw new DomainError('INVALID_STATE', 'Nenhuma partida em andamento');
+    // Cartas de jogo não são apagadas por leave()/kick() (só as de lobby),
+    // então um jogador removido mid-game ainda teria uma Card válida aqui.
+    // Exige membership atual para fechar essa brecha de pontos.
+    const member = await this.prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId: room.id, userId } },
+    });
+    if (!member)
+      throw new DomainError('NOT_IN_ROOM', 'Você não está nesta partida');
     const card = await this.prisma.card.findUnique({
       where: { gameId_userId: { gameId: game.id, userId } },
     });
