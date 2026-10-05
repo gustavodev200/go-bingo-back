@@ -1,0 +1,13 @@
+{
+  "project": "go-bingo",
+  "preset": "prisma-postgres",
+
+  "frontend": "nextjs",
+  "backend": "nestjs",
+  "database": "prisma-postgres",
+  "auth": "supabase-auth",
+  "email": null,
+  "storage": null,
+
+  "notes": "Desvio consciente (PRD D1/D2/D7): Prisma é dono do schema no Postgres hospedado no Supabase; Supabase usado só para Auth (Google + anônimo). Não carregar a skill supabase para dados/migrations; regras de Supabase Auth só no que tocar autenticação. Realtime via Socket.IO no NestJS, 3D via React Three Fiber."
+}
