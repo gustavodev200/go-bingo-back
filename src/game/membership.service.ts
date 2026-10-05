@@ -61,7 +61,17 @@ export class MembershipService {
 
   leave(code: string, userId: string): Promise<LeaveResult> {
     return this.prisma.$transaction(async (tx) => {
-      const room = await tx.room.findUnique({ where: { code } });
+      // Lock + leitura da sala numa única instrução: isso serializa leaves/
+      // kicks concorrentes na mesma sala E garante que o hostId usado abaixo
+      // já reflete qualquer transferência que a outra transação tenha
+      // comitado. Um lock sem reler o hostId (ou lido antes do lock) não
+      // resolve: a transação que fica bloqueada retomaria com um hostId
+      // obtido antes do commit da outra, decidindo a transferência com base
+      // em estado stale — podendo deixar a sala com hostId apontando para
+      // alguém que também acabou de sair nesse mesmo instante.
+      const [room] = await tx.$queryRaw<
+        { id: string; hostId: string; status: string }[]
+      >`SELECT "id", "hostId", "status" FROM "Room" WHERE "code" = ${code} FOR UPDATE`;
       if (!room || room.status === 'CLOSED')
         return { removed: false, closed: false };
 

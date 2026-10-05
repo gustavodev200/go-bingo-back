@@ -97,6 +97,37 @@ describe('MembershipService', () => {
     ).toBe(p1.id);
   });
 
+  it('does not leave a dangling host when the host and the heir leave concurrently', async () => {
+    const host = await makeUser(t, 'Host');
+    const p1 = await makeUser(t, 'Ana');
+    const p2 = await makeUser(t, 'Bia');
+    const room = await makeRoom(t, host.id);
+    await svc.join(room.code, p1.id);
+    await svc.join(room.code, p2.id);
+
+    // host and p1 (the heir host-transfer would pick) leave at nearly the
+    // same instant — without serializing the two leave() transactions, each
+    // could decide the host transfer from a snapshot that predates the
+    // other's commit, leaving hostId pointing at someone who already left.
+    await Promise.all([
+      svc.leave(room.code, host.id),
+      svc.leave(room.code, p1.id),
+    ]);
+
+    const finalRoom = await t.prisma.room.findUniqueOrThrow({
+      where: { id: room.id },
+    });
+    expect(finalRoom.hostId).toBe(p2.id);
+    expect(
+      await t.prisma.roomMember.findUnique({
+        where: { roomId_userId: { roomId: room.id, userId: finalRoom.hostId } },
+      }),
+    ).not.toBeNull();
+    expect(
+      await t.prisma.roomMember.count({ where: { roomId: room.id } }),
+    ).toBe(1);
+  });
+
   it('closes the room and cancels the game when the last member leaves', async () => {
     const host = await makeUser(t, 'Host');
     const room = await makeRoom(t, host.id);
