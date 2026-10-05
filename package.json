@@ -18,7 +18,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test": "jest",
-    "test:e2e": "dotenv -e .env.test -- jest --config test/jest-e2e.json --runInBand",
+    "test:e2e": "dotenv -e .env.test -v \"NODE_OPTIONS=--experimental-vm-modules --disable-warning=ExperimentalWarning\" -- jest --config test/jest-e2e.json --runInBand",
     "test:db:reset": "dotenv -e .env.test -- prisma migrate reset --force",
     "contracts:sync": "node scripts/sync-contracts.mjs"
   },
