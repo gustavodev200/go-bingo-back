@@ -64,6 +64,24 @@ Toda feature de porte médio+ produz, em `specs/<NNN>-<slug>/`: `spec.md`
 aplicável, `security-review.md` (`/security`) e `code-review.md`
 (`/review`).
 
+### VIII. Cobertura de Testes Unitários Obrigatória
+
+Todo código de lógica (services, regras puras, reducers/stores, hooks,
+`lib/`) tem teste unitário antes de ser considerado concluído — não é
+responsabilidade só do `/test` depois do fato, é parte do próprio
+`/speckit-implement` (TDD: teste antes do código, ver `tdd` skill). CI
+roda a suíte com `--coverage` e falha a build abaixo de **80% de
+statements/branches/functions/lines**, medidos sobre `src/` excluindo
+código gerado (`src/generated/`, `src/contracts/` no projeto que só
+recebe o contrato por `contracts:sync`) e arquivos de configuração sem
+lógica. Testes end-to-end/integração (ex.: `test/*.e2e-spec.ts` no
+Preset A) complementam a cobertura unitária mas não a substituem — uma
+regra de negócio sem teste unitário próprio, só coberta por um e2e, é
+dívida a ser registrada, não a meta. Uma feature cujo `plan.md` não
+reserva tempo para isso, ou cujo PR reduz a cobertura abaixo do limiar,
+bloqueia em `/review` (Princípio V estende-se a cobertura, não só a
+achados de segurança).
+
 ## Integração com o Spec-Kit Oficial
 
 Este workspace usa o [spec-kit](https://github.com/github/spec-kit) oficial
@@ -96,4 +114,4 @@ novo ou seção expandida; PATCH = redação/clarificação) e atualização da
 data de "Last Amended" abaixo. `/speckit-plan` deve recusar avançar se o
 "Constitution Check" apontar violação não justificada.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-09-08
+**Version**: 1.1.0 | **Ratified**: 2026-09-08 | **Last Amended**: 2026-10-05
