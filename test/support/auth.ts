@@ -26,5 +26,5 @@ export async function createTestAuth(issuer: string) {
       .sign(privateKey);
   }
 
-  return { keySet, sign };
+  return { keySet, sign, privateKey };
 }

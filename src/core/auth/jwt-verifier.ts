@@ -28,7 +28,10 @@ export class JwtVerifier {
         audience: 'authenticated',
       });
       if (typeof payload.sub !== 'string') throw new Error('sub ausente');
-      return { id: payload.sub, isAnonymous: payload.is_anonymous === true };
+      // Fail closed: só é considerado registrado quando a claim diz
+      // explicitamente `false`. Qualquer outra coisa (ausente, undefined,
+      // valor inesperado) é tratada como anônimo, nunca o contrário.
+      return { id: payload.sub, isAnonymous: payload.is_anonymous !== false };
     } catch {
       throw new DomainError('UNAUTHENTICATED', 'Sessão inválida ou expirada');
     }
