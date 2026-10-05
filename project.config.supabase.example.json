@@ -1,0 +1,14 @@
+{
+  "$schema": "./project.config.schema.json",
+  "project": "nome-do-projeto",
+  "preset": "supabase",
+
+  "frontend": "nextjs",
+  "backend": "supabase",
+  "database": "supabase",
+  "auth": "supabase-auth",
+  "email": "resend",
+  "storage": "supabase-storage",
+
+  "notes": "Variante do project.config.json para o Preset B (Supabase). Copie para project.config.json na raiz do novo projeto."
+}

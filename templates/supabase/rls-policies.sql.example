@@ -1,0 +1,38 @@
+-- Exemplo de migration completa: tabela + RLS + policies.
+-- Toda migration de tabela nova segue este padrão — RLS nunca fica para depois.
+
+create table if not exists public.posts (
+  id uuid primary key default gen_random_uuid(),
+  author_id uuid not null references auth.users (id) on delete cascade,
+  title text not null,
+  content text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists posts_author_id_idx on public.posts (author_id);
+
+-- RLS obrigatória — sem isto, a tabela fica bloqueada por padrão (correto),
+-- mas sem policy nenhuma ninguém consegue acessar, nem o próprio dono.
+alter table public.posts enable row level security;
+
+-- SELECT: dono vê os próprios posts. Ajuste se a tabela for pública para leitura.
+create policy "posts_select_own"
+  on public.posts for select
+  using (auth.uid() = author_id);
+
+-- INSERT: só pode criar post como si mesmo.
+create policy "posts_insert_own"
+  on public.posts for insert
+  with check (auth.uid() = author_id);
+
+-- UPDATE: só o dono edita, e não pode trocar o author_id para outro usuário.
+create policy "posts_update_own"
+  on public.posts for update
+  using (auth.uid() = author_id)
+  with check (auth.uid() = author_id);
+
+-- DELETE: só o dono apaga.
+create policy "posts_delete_own"
+  on public.posts for delete
+  using (auth.uid() = author_id);

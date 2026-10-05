@@ -1,0 +1,14 @@
+{
+  "$schema": "./project.config.schema.json",
+  "project": "nome-do-projeto",
+  "preset": "prisma-postgres",
+
+  "frontend": "nextjs",
+  "backend": "nestjs",
+  "database": "prisma-postgres",
+  "auth": "better-auth",
+  "email": "resend",
+  "storage": null,
+
+  "notes": "Copie este arquivo para project.config.json na raiz do novo projeto e ajuste os valores. O campo 'preset' é a fonte da verdade para quais skills condicionais (prisma/ ou supabase/) o agente deve carregar."
+}
