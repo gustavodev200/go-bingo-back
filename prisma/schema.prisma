@@ -1,0 +1,112 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RoomStatus {
+  WAITING
+  IN_GAME
+  CLOSED
+}
+
+enum GameStatus {
+  IN_PROGRESS
+  FINISHED
+  CANCELLED
+}
+
+enum WinPattern {
+  FULL_CARD
+}
+
+/// id = auth.users.id do Supabase (sem FK: schemas diferentes).
+model Profile {
+  id          String       @id @db.Uuid
+  nickname    String?      @db.VarChar(16)
+  isGuest     Boolean      @default(true)
+  points      Int          @default(0)
+  gamesPlayed Int          @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  memberships RoomMember[]
+
+  @@index([points(sort: Desc)])
+}
+
+model Room {
+  id             String       @id @default(uuid()) @db.Uuid
+  code           String       @unique @db.Char(6)
+  name           String       @db.VarChar(24)
+  hostId         String       @db.Uuid
+  maxPlayers     Int
+  isPublic       Boolean
+  status         RoomStatus   @default(WAITING)
+  drawIntervalMs Int          @default(5000)
+  winPattern     WinPattern   @default(FULL_CARD)
+  createdAt      DateTime     @default(now())
+  members        RoomMember[]
+  games          Game[]
+  cards          Card[]
+
+  @@index([isPublic, status])
+}
+
+model RoomMember {
+  roomId     String   @db.Uuid
+  userId     String   @db.Uuid
+  slot       Int
+  cardRegens Int      @default(0)
+  joinedAt   DateTime @default(now())
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  profile    Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, userId])
+  @@unique([roomId, slot])
+}
+
+model Game {
+  id         String     @id @default(uuid()) @db.Uuid
+  roomId     String     @db.Uuid
+  status     GameStatus @default(IN_PROGRESS)
+  drawnCount Int        @default(0)
+  winnerId   String?    @db.Uuid
+  startedAt  DateTime   @default(now())
+  finishedAt DateTime?
+  room       Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  draws      Draw[]
+  cards      Card[]
+
+  @@index([status])
+  @@index([roomId, status])
+}
+
+model Draw {
+  gameId  String   @db.Uuid
+  seq     Int
+  number  Int
+  drawnAt DateTime @default(now())
+  game    Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@id([gameId, seq])
+  @@unique([gameId, number])
+}
+
+/// gameId nulo = cartela do lobby (no máximo 1 por jogador por sala — índice parcial na migration).
+model Card {
+  id     String  @id @default(uuid()) @db.Uuid
+  roomId String  @db.Uuid
+  userId String  @db.Uuid
+  gameId String? @db.Uuid
+  grid   Int[]
+  marked Int[]   @default([])
+  room   Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  game   Game?   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, userId])
+  @@index([roomId, userId])
+}
