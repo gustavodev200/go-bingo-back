@@ -1,3 +1,16 @@
+## Rodando o Go Bingo Back
+
+```bash
+cp .env.example .env          # preencha SUPABASE_URL com o seu projeto
+docker compose up -d          # Postgres local (cria go_bingo e go_bingo_test)
+npm install
+npx prisma migrate dev        # aplica migrations e gera o client
+npm run start:dev             # http://localhost:3333 · socket em /game
+```
+
+Testes: `npm test` (unitários) · `npm run test:db:reset && npm run test:e2e` (integração com Postgres).
+Contrato com o front: edite `src/contracts/` e rode `npm run contracts:sync`.
+
 # workspace-agents
 
 Workspace/template pessoal para desenvolvimento de software com agentes de
