@@ -38,6 +38,8 @@ import { SnapshotService } from './snapshot.service';
 interface SocketData {
   user: AuthUser;
   roomCode?: string;
+  /** Sala sendo reivindicada por um room:join em andamento neste socket, antes do membership.join() resolver. */
+  joiningCode?: string;
 }
 type AnyEvents = { [event: string]: (...args: unknown[]) => void };
 type GameSocket = Socket<AnyEvents, AnyEvents, AnyEvents, SocketData>;
@@ -127,30 +129,54 @@ export class GameGateway
       joinRoomPayloadSchema,
       body,
       async (user, { code }) => {
-        if (socket.data.roomCode && socket.data.roomCode !== code) {
+        const active = this.currentRoom(socket) ?? socket.data.joiningCode;
+        if (active && active !== code) {
           throw new DomainError(
             'INVALID_STATE',
             'Saia da sala atual antes de entrar em outra',
           );
         }
-        await this.membership.join(code, user.id);
-        socket.data.roomCode = code;
-        await socket.join(roomChannel(code));
-        const { firstSocket, reconnected } = this.presence.connect(
-          code,
-          user.id,
-          socket.id,
-        );
-        const snapshot = await this.snapshots.build(code, user.id);
-        if (firstSocket) {
-          const member = snapshot.members.find((m) => m.userId === user.id);
-          if (member)
-            socket
-              .to(roomChannel(code))
-              .emit(ServerEvents.MEMBER_JOINED, { member, reconnected });
-          this.publisher.publicRoomsChanged();
+        // Reivindica a sala sincronamente, antes de qualquer await: se uma
+        // segunda chamada de room:join chegar neste mesmo socket para um
+        // código diferente enquanto este membership.join() ainda está
+        // pendente, ela vai ver o claim acima e ser rejeitada — sem isso,
+        // as duas passariam pela checagem antes que qualquer uma resolvesse,
+        // deixando o usuário membro de duas salas ao mesmo tempo.
+        socket.data.joiningCode = code;
+        try {
+          await this.membership.join(code, user.id);
+          if (!socket.connected) {
+            // O socket desconectou enquanto membership.join() estava
+            // pendente. handleDisconnect já rodou (e não fez nada, pois
+            // roomCode ainda não estava setado) e não vai rodar de novo
+            // para este socket — não registra presença para um socket
+            // morto, isso criaria uma entrada "fantasma" que nunca expira
+            // nem dispara troca de host.
+            throw new DomainError(
+              'NOT_IN_ROOM',
+              'Conexão perdida durante a entrada na sala',
+            );
+          }
+          await socket.join(roomChannel(code));
+          socket.data.roomCode = code;
+          const { firstSocket, reconnected } = this.presence.connect(
+            code,
+            user.id,
+            socket.id,
+          );
+          const snapshot = await this.snapshots.build(code, user.id);
+          if (firstSocket) {
+            const member = snapshot.members.find((m) => m.userId === user.id);
+            if (member)
+              socket
+                .to(roomChannel(code))
+                .emit(ServerEvents.MEMBER_JOINED, { member, reconnected });
+            this.publisher.publicRoomsChanged();
+          }
+          return snapshot;
+        } finally {
+          socket.data.joiningCode = undefined;
         }
-        return snapshot;
       },
     );
   }
@@ -330,8 +356,27 @@ export class GameGateway
     this.publisher.publicRoomsChanged();
   }
 
-  private requireRoom(socket: GameSocket): string {
+  /**
+   * Lê a sala atual do socket, mas não confia apenas na string guardada:
+   * confirma que o socket ainda está de fato no canal da sala. Depois de
+   * room:cancel ou room:kick, o socket é removido do canal (ver
+   * RealtimePublisher.closeRoomChannel/removeUserFromRoom) mas nada limpa
+   * socket.data.roomCode diretamente — sem essa checagem, o socket ficaria
+   * travado achando que ainda está numa sala já fechada/da qual foi
+   * removido, e um room:join para uma sala NOVA seria indevidamente
+   * rejeitado com INVALID_STATE até um room:leave redundante.
+   */
+  private currentRoom(socket: GameSocket): string | undefined {
     const code = socket.data.roomCode;
+    if (code && !socket.rooms.has(roomChannel(code))) {
+      socket.data.roomCode = undefined;
+      return undefined;
+    }
+    return code;
+  }
+
+  private requireRoom(socket: GameSocket): string {
+    const code = this.currentRoom(socket);
     if (!code)
       throw new DomainError('NOT_IN_ROOM', 'Você não está em uma sala');
     return code;

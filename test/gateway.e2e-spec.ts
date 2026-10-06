@@ -2,6 +2,7 @@ import type { Socket } from 'socket.io-client';
 import { DRAW_TIMER, type DrawTimer } from '../src/game/draw-timer';
 import { GameRunner } from '../src/game/game-runner.service';
 import { GamesService } from '../src/game/games.service';
+import { MembershipService } from '../src/game/membership.service';
 import { PresenceService } from '../src/game/presence.service';
 import { createTestApp, TestApp } from './support/app';
 import { makeRoom, makeUser } from './support/factories';
@@ -293,5 +294,135 @@ describe('GameGateway', () => {
     await expect(update).resolves.toMatchObject({
       rooms: [expect.objectContaining({ playerCount: 2 })],
     });
+  });
+
+  it('lets a member immediately join a different room after the host cancels', async () => {
+    const { ana, hs, as } = await roomWithTwo();
+    const host2 = await makeUser(t, 'Host2');
+    const room2 = await makeRoom(t, host2.id);
+
+    await expect(ack(hs, 'room:cancel')).resolves.toEqual({
+      ok: true,
+      data: null,
+    });
+
+    // Sem o fix: a rejeição fica travada em INVALID_STATE porque o socket da
+    // Ana ainda guarda o roomCode da sala 1, mesmo tendo sido removido do
+    // canal pelo closeRoomChannel(). Ela precisa poder entrar na sala 2 sem
+    // precisar emitir room:leave antes.
+    const res = await ack<{ ok: boolean; data?: { code: string } }>(
+      as,
+      'room:join',
+      { code: room2.code },
+    );
+    expect(res).toMatchObject({ ok: true, data: { code: room2.code } });
+
+    // membership.cancel() só fecha a sala 1 (status CLOSED); não apaga o
+    // RoomMember antigo. O que importa aqui é que a entrada na sala 2
+    // realmente criou a nova membership — o que confirma que o room:join
+    // não foi bloqueado por um roomCode "fantasma" da sala cancelada.
+    const room2Id = (
+      await t.prisma.room.findUniqueOrThrow({ where: { code: room2.code } })
+    ).id;
+    const membership = await t.prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId: room2Id, userId: ana.id } },
+    });
+    expect(membership).not.toBeNull();
+  });
+
+  it('lets a kicked player immediately join a different room', async () => {
+    const { ana, hs, as } = await roomWithTwo();
+    const host2 = await makeUser(t, 'Host2');
+    const room2 = await makeRoom(t, host2.id);
+
+    await expect(ack(hs, 'room:kick', { userId: ana.id })).resolves.toEqual({
+      ok: true,
+      data: null,
+    });
+
+    const res = await ack<{ ok: boolean; data?: { code: string } }>(
+      as,
+      'room:join',
+      { code: room2.code },
+    );
+    expect(res).toMatchObject({ ok: true, data: { code: room2.code } });
+  });
+
+  it('rejects a concurrent room:join to a different room on the same socket', async () => {
+    const hostA = await makeUser(t, 'HostA');
+    const hostB = await makeUser(t, 'HostB');
+    const ana = await makeUser(t, 'Ana');
+    const roomA = await makeRoom(t, hostA.id);
+    const roomB = await makeRoom(t, hostB.id);
+    const s = await client(ana.token);
+
+    const [resA, resB] = await Promise.all([
+      ack<{ ok: boolean; error?: { code: string } }>(s, 'room:join', {
+        code: roomA.code,
+      }),
+      ack<{ ok: boolean; error?: { code: string } }>(s, 'room:join', {
+        code: roomB.code,
+      }),
+    ]);
+
+    const results = [resA, resB];
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(
+      results.some((r) => !r.ok && r.error?.code === 'INVALID_STATE'),
+    ).toBe(true);
+
+    const memberships = await t.prisma.roomMember.findMany({
+      where: { userId: ana.id },
+    });
+    expect(memberships).toHaveLength(1);
+  });
+
+  it('does not create a ghost presence entry when the socket disconnects mid-join', async () => {
+    const host = await makeUser(t, 'Host');
+    const ana = await makeUser(t, 'Ana');
+    const room = await makeRoom(t, host.id);
+    const membership = t.app.get(MembershipService);
+
+    let signalReached: () => void = () => undefined;
+    const reached = new Promise<void>((resolve) => (signalReached = resolve));
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let signalDone: () => void = () => undefined;
+    const done = new Promise<void>((resolve) => (signalDone = resolve));
+    const original = membership.join.bind(membership);
+    const spy = jest
+      .spyOn(membership, 'join')
+      .mockImplementation(async (code: string, userId: string) => {
+        signalReached();
+        await gate;
+        try {
+          return await original(code, userId);
+        } finally {
+          signalDone();
+        }
+      });
+
+    try {
+      const s = await client(ana.token);
+      const joinAck = ack(s, 'room:join', { code: room.code }).catch(
+        () => undefined,
+      );
+      await reached; // o handler já entrou em membership.join() e está preso no gate
+      s.close();
+      await new Promise((r) => setTimeout(r, 150)); // dá tempo do handleDisconnect rodar no socket já morto
+      release();
+      // Espera o membership.join() real (que a troca acima destravou) terminar
+      // de fato no servidor, não só a rejeição local do ack no cliente —
+      // senão o teste termina (e o afterAll fecha o app) enquanto o handler
+      // ainda está no meio de awaits no servidor.
+      await done;
+      await joinAck;
+      await new Promise((r) => setTimeout(r, 50)); // deixa o handler terminar o resto da cadeia síncrona após o join
+    } finally {
+      spy.mockRestore();
+    }
+
+    const presence = t.app.get(PresenceService);
+    expect(presence.connectedSet(room.code).has(ana.id)).toBe(false);
   });
 });
