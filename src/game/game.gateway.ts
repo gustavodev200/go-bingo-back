@@ -149,9 +149,12 @@ export class GameGateway
             // O socket desconectou enquanto membership.join() estava
             // pendente. handleDisconnect já rodou (e não fez nada, pois
             // roomCode ainda não estava setado) e não vai rodar de novo
-            // para este socket — não registra presença para um socket
-            // morto, isso criaria uma entrada "fantasma" que nunca expira
-            // nem dispara troca de host.
+            // para este socket. O membership.join() acima já pode ter
+            // criado um RoomMember de verdade no banco — em vez de deixar
+            // esse membro "fantasma" sem presença e sem timer de expiração,
+            // arma a janela de graça agora (vira no-op se já houver
+            // presença, ex.: outro socket do mesmo usuário ainda conectado).
+            this.presence.armOffline(code, user.id);
             throw new DomainError(
               'NOT_IN_ROOM',
               'Conexão perdida durante a entrada na sala',

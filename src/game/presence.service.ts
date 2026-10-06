@@ -50,6 +50,23 @@ export class PresenceService implements OnModuleDestroy {
     return { offline: true };
   }
 
+  /**
+   * Arma a janela de expiração para um membro que existe no banco mas não
+   * tem presença nenhuma (reinício do servidor, POST /rooms sem socket,
+   * ou o aborto de room:join quando o socket morre no meio do join).
+   * Idempotente: não faz nada se o usuário já tem uma entrada (conectado
+   * ou já aguardando expiração).
+   */
+  armOffline(code: string, userId: string): void {
+    const room = this.room(code);
+    if (room.has(userId)) return;
+    const timer = setTimeout(() => {
+      room.delete(userId);
+      this.onExpired(code, userId);
+    }, RECONNECT_GRACE_MS);
+    room.set(userId, { sockets: new Set(), timer });
+  }
+
   remove(code: string, userId: string): void {
     const entry = this.rooms.get(code)?.get(userId);
     if (entry) clearTimeout(entry.timer);

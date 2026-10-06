@@ -2,6 +2,7 @@ import { GameRunner } from '../src/game/game-runner.service';
 import { DRAW_TIMER, type DrawTimer } from '../src/game/draw-timer';
 import { GamesService } from '../src/game/games.service';
 import { MembershipService } from '../src/game/membership.service';
+import { PresenceService } from '../src/game/presence.service';
 import { createTestApp, TestApp } from './support/app';
 import { makeRoom, makeUser } from './support/factories';
 
@@ -84,5 +85,60 @@ describe('GameRunner', () => {
 
     await runner.tick(gameId, room.code, 5000);
     expect(scheduled).toHaveLength(0);
+  });
+
+  describe('onApplicationBootstrap presence recovery', () => {
+    it('arms a real expiry grace window for members left over a restart, so an abandoned host still gets replaced', async () => {
+      const host = await makeUser(t, 'Host');
+      const ana = await makeUser(t, 'Ana');
+      const room = await makeRoom(t, host.id);
+      const membership = t.app.get(MembershipService);
+      await membership.join(room.code, ana.id);
+      const presence = t.app.get(PresenceService);
+
+      // Simula o estado logo após um restart do servidor: host e ana são
+      // RoomMembers reais no banco (criados sem nenhum socket conectado),
+      // mas a presença em memória — que é zerada a cada boot — não tem
+      // entrada nenhuma para eles.
+      expect(presence.connectedSet(room.code).size).toBe(0);
+
+      await t.app.get(GameRunner).onApplicationBootstrap();
+
+      // connect() só reporta reconnected:true quando já existia uma entrada
+      // com um timer vivo — essa é a prova de que onApplicationBootstrap
+      // realmente armou uma janela de expiração para os dois, em vez de
+      // deixá-los como membros "fantasma" sem presença e sem timer.
+      expect(presence.connect(room.code, host.id, 'host-tmp')).toEqual({
+        firstSocket: true,
+        reconnected: true,
+      });
+      expect(presence.connect(room.code, ana.id, 'ana-tmp')).toEqual({
+        firstSocket: true,
+        reconnected: true,
+      });
+      // Volta ao estado "sem presença, timer já consumido pela checagem
+      // acima" para o restante do teste, sem deixar nenhum timer real de
+      // 60s pendente depois que o teste terminar.
+      presence.remove(room.code, host.id);
+      presence.remove(room.code, ana.id);
+
+      // Simula o fim da janela de 60s chamando o handler de expiração
+      // registrado pelo gateway — mesmo padrão já usado no teste "expiry
+      // transfers host and notifies the room" em gateway.e2e-spec.ts, para
+      // não depender de esperar o tempo real.
+      (
+        presence as unknown as { onExpired: (c: string, u: string) => void }
+      ).onExpired(room.code, host.id);
+      await new Promise((r) => setTimeout(r, 200)); // deixa membership.leave() (transação no banco) terminar
+
+      const updatedRoom = await t.prisma.room.findUniqueOrThrow({
+        where: { code: room.code },
+      });
+      expect(updatedRoom.hostId).toBe(ana.id);
+      const members = await t.prisma.roomMember.findMany({
+        where: { roomId: room.id },
+      });
+      expect(members.map((m) => m.userId)).toEqual([ana.id]);
+    });
   });
 });

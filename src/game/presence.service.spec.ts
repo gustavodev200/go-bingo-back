@@ -63,6 +63,48 @@ describe('PresenceService', () => {
     expect(expired).not.toHaveBeenCalled();
   });
 
+  it('armOffline() arms an expiry timer for a member with no presence at all', () => {
+    const p = new PresenceService();
+    const expired = jest.fn();
+    p.setExpiryHandler(expired);
+
+    p.armOffline('ROOM01', 'u1');
+
+    expect(p.connectedSet('ROOM01').has('u1')).toBe(false);
+    jest.advanceTimersByTime(RECONNECT_GRACE_MS - 1);
+    expect(expired).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(1);
+    expect(expired).toHaveBeenCalledWith('ROOM01', 'u1');
+  });
+
+  it('armOffline() is idempotent: it does not overwrite an existing entry', () => {
+    const p = new PresenceService();
+    const expired = jest.fn();
+    p.setExpiryHandler(expired);
+    p.connect('ROOM01', 'u1', 's1');
+
+    p.armOffline('ROOM01', 'u1'); // já conectado — não deve armar timer nenhum
+
+    jest.advanceTimersByTime(RECONNECT_GRACE_MS);
+    expect(expired).not.toHaveBeenCalled();
+    expect(p.connectedSet('ROOM01').has('u1')).toBe(true);
+  });
+
+  it('armOffline() lets a real connect() cancel the armed timer, reporting reconnected:true', () => {
+    const p = new PresenceService();
+    const expired = jest.fn();
+    p.setExpiryHandler(expired);
+
+    p.armOffline('ROOM01', 'u1');
+
+    expect(p.connect('ROOM01', 'u1', 's1')).toEqual({
+      firstSocket: true,
+      reconnected: true,
+    });
+    jest.advanceTimersByTime(RECONNECT_GRACE_MS);
+    expect(expired).not.toHaveBeenCalled();
+  });
+
   it('disconnect() on an unknown room/user is a safe no-op', () => {
     const p = new PresenceService();
     expect(p.disconnect('UNKNOWN', 'ghost', 's1')).toEqual({ offline: false });

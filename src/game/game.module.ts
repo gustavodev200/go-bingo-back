@@ -9,16 +9,15 @@ import { GameGateway } from './game.gateway';
 import { GameRunner } from './game-runner.service';
 import { GamesService } from './games.service';
 import { MembershipService } from './membership.service';
-import { PresenceService } from './presence.service';
+import { PresenceModule } from './presence.module';
 import { RealtimePublisher } from './realtime-publisher';
 import { SnapshotService } from './snapshot.service';
 
 @Module({
-  imports: [RoomsModule, ProfilesModule],
+  imports: [RoomsModule, ProfilesModule, PresenceModule],
   providers: [
     MembershipService,
     GamesService,
-    PresenceService,
     RealtimePublisher,
     SnapshotService,
     GameRunner,

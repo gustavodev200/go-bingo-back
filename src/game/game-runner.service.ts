@@ -9,6 +9,7 @@ import { ServerEvents } from '../contracts';
 import { PrismaService } from '../core/prisma.service';
 import { DRAW_TIMER, type DrawTimer } from './draw-timer';
 import { GamesService } from './games.service';
+import { PresenceService } from './presence.service';
 import { RealtimePublisher } from './realtime-publisher';
 import { SnapshotService } from './snapshot.service';
 
@@ -22,6 +23,7 @@ export class GameRunner implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly snapshots: SnapshotService,
     private readonly publisher: RealtimePublisher,
     private readonly prisma: PrismaService,
+    private readonly presence: PresenceService,
     @Inject(DRAW_TIMER) private readonly timer: DrawTimer,
   ) {}
 
@@ -85,6 +87,19 @@ export class GameRunner implements OnApplicationBootstrap, OnModuleDestroy {
   async onApplicationBootstrap(): Promise<void> {
     for (const game of await this.games.findInProgress())
       this.schedule(game.id, game.roomCode, game.drawIntervalMs);
+
+    // Presença é só em memória e é zerada a cada boot: qualquer RoomMember
+    // de uma sala ainda aberta ficou sem presença nenhuma e sem timer de
+    // expiração depois do restart. Sem isto, um host offline nunca é
+    // substituído e a sala trava para sempre (host-transfer só acontece via
+    // o caminho de expiração → removeMember). Arma a janela de graça para
+    // cada um; quem reconectar cancela o timer normalmente em presence.connect().
+    const members = await this.prisma.roomMember.findMany({
+      where: { room: { status: { not: 'CLOSED' } } },
+      select: { userId: true, room: { select: { code: true } } },
+    });
+    for (const member of members)
+      this.presence.armOffline(member.room.code, member.userId);
   }
 
   onModuleDestroy(): void {

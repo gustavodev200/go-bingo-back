@@ -32,6 +32,7 @@ function makeDeps() {
     disconnect: jest.fn(),
     remove: jest.fn(),
     clearRoom: jest.fn(),
+    armOffline: jest.fn(),
   };
   const publisher = {
     attach: jest.fn(),
@@ -402,6 +403,7 @@ describe('GameGateway.onJoin', () => {
       },
     });
     expect(socket.data.joiningCode).toBeUndefined();
+    expect(deps.presence.armOffline).toHaveBeenCalledWith('AAA234', user.id);
   });
 });
 

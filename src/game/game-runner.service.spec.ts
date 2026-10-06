@@ -2,6 +2,7 @@ import { ServerEvents } from '../contracts';
 import type { PrismaService } from '../core/prisma.service';
 import { GameRunner } from './game-runner.service';
 import type { GamesService } from './games.service';
+import type { PresenceService } from './presence.service';
 import type { RealtimePublisher } from './realtime-publisher';
 import type { SnapshotService } from './snapshot.service';
 
@@ -19,6 +20,7 @@ function makeDeps() {
     publicRoomsChanged: jest.fn(),
   };
   const prisma = { roomMember: { findMany: jest.fn().mockResolvedValue([]) } };
+  const presence = { armOffline: jest.fn() };
   let nextHandle = 0;
   const timer = {
     set: jest.fn(() => ++nextHandle),
@@ -29,9 +31,10 @@ function makeDeps() {
     snapshots as unknown as SnapshotService,
     publisher as unknown as RealtimePublisher,
     prisma as unknown as PrismaService,
+    presence as unknown as PresenceService,
     timer,
   );
-  return { runner, games, snapshots, publisher, prisma, timer };
+  return { runner, games, snapshots, publisher, prisma, presence, timer };
 }
 
 describe('GameRunner.start', () => {
@@ -195,6 +198,36 @@ describe('GameRunner.onApplicationBootstrap', () => {
     await runner.onApplicationBootstrap();
 
     expect(timer.set).not.toHaveBeenCalled();
+  });
+
+  it('arms presence for every member of every room that is not closed', async () => {
+    const { runner, games, prisma, presence } = makeDeps();
+    games.findInProgress.mockResolvedValue([]);
+    prisma.roomMember.findMany.mockResolvedValue([
+      { userId: 'u1', room: { code: 'ABC123' } },
+      { userId: 'u2', room: { code: 'ABC123' } },
+      { userId: 'u3', room: { code: 'DEF456' } },
+    ]);
+
+    await runner.onApplicationBootstrap();
+
+    expect(prisma.roomMember.findMany).toHaveBeenCalledWith({
+      where: { room: { status: { not: 'CLOSED' } } },
+      select: { userId: true, room: { select: { code: true } } },
+    });
+    expect(presence.armOffline).toHaveBeenCalledTimes(3);
+    expect(presence.armOffline).toHaveBeenCalledWith('ABC123', 'u1');
+    expect(presence.armOffline).toHaveBeenCalledWith('ABC123', 'u2');
+    expect(presence.armOffline).toHaveBeenCalledWith('DEF456', 'u3');
+  });
+
+  it('arms no presence when there are no room members at all', async () => {
+    const { runner, games, presence } = makeDeps();
+    games.findInProgress.mockResolvedValue([]);
+
+    await runner.onApplicationBootstrap();
+
+    expect(presence.armOffline).not.toHaveBeenCalled();
   });
 });
 

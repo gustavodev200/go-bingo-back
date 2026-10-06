@@ -12,6 +12,20 @@ describe('loadEnv', () => {
     const env = loadEnv(valid);
     expect(env.PORT).toBe(3333);
     expect(env.NODE_ENV).toBe('development');
+    expect(env.TRUST_PROXY).toBe(false);
+  });
+
+  it('parses TRUST_PROXY from the literal string, not via truthiness', () => {
+    expect(loadEnv({ ...valid, TRUST_PROXY: 'true' }).TRUST_PROXY).toBe(true);
+    // O ponto desse teste: "false" como string não pode virar true (o que
+    // z.coerce.boolean() faria, já que Boolean("false") é truthy).
+    expect(loadEnv({ ...valid, TRUST_PROXY: 'false' }).TRUST_PROXY).toBe(false);
+  });
+
+  it('throws when TRUST_PROXY is not a recognizable boolean string', () => {
+    expect(() => loadEnv({ ...valid, TRUST_PROXY: 'garbage' })).toThrow(
+      /TRUST_PROXY/,
+    );
   });
 
   it('coerces PORT', () => {

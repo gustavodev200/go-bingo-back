@@ -1,6 +1,7 @@
 import { Prisma } from '../generated/prisma/client';
 import type { PrismaService } from '../core/prisma.service';
 import type { RandomInt } from '../core/random';
+import type { PresenceService } from '../game/presence.service';
 import { RoomsService } from './rooms.service';
 
 function uniqueViolation() {
@@ -55,6 +56,36 @@ describe('RoomsService', () => {
         members: { create: { userId: 'host', slot: 0 } },
       },
     });
+  });
+
+  it('create() arms a presence grace window for the host, who has no socket yet', async () => {
+    const prisma = makePrisma();
+    prisma.profile.findUnique.mockResolvedValue({ nickname: 'Host' });
+    prisma.room.create.mockResolvedValue({ id: 'room-1' });
+    const presence = { armOffline: jest.fn() };
+    const service = new RoomsService(
+      prisma as unknown as PrismaService,
+      random,
+      presence as unknown as PresenceService,
+    );
+
+    const result = await service.create('host', input);
+
+    expect(presence.armOffline).toHaveBeenCalledWith(result.code, 'host');
+  });
+
+  it('create() works without a PresenceService (optional dependency)', async () => {
+    const prisma = makePrisma();
+    prisma.profile.findUnique.mockResolvedValue({ nickname: 'Host' });
+    prisma.room.create.mockResolvedValue({ id: 'room-1' });
+    const service = new RoomsService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+
+    const result = await service.create('host', input);
+
+    expect(result.code).toHaveLength(6);
   });
 
   it('create() retries on a room-code collision and eventually succeeds', async () => {

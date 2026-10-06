@@ -1,9 +1,10 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type { CreateRoomInput, PublicRoom } from '../contracts';
 import { DomainError } from '../core/domain-error';
 import { isUniqueViolation } from '../core/prisma-errors';
 import { PrismaService } from '../core/prisma.service';
 import { RANDOM_INT, type RandomInt } from '../core/random';
+import { PresenceService } from '../game/presence.service';
 import { generateRoomCode } from './room-code';
 
 const CODE_ATTEMPTS = 5;
@@ -13,6 +14,7 @@ export class RoomsService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(RANDOM_INT) private readonly random: RandomInt,
+    @Optional() private readonly presence?: PresenceService,
   ) {}
 
   async create(
@@ -39,6 +41,12 @@ export class RoomsService {
             members: { create: { userId: hostId, slot: 0 } },
           },
         });
+        // O host agora é um RoomMember de verdade no banco, mas ainda não
+        // abriu socket nenhum (ele chegou aqui via POST /rooms, não via
+        // room:join) — sem presença nem timer, ficaria stuck pra sempre se
+        // nunca conectar. Arma a janela de expiração desde já; se ele
+        // conectar depois, presence.connect() cancela esse timer normalmente.
+        this.presence?.armOffline(code, hostId);
         return { code };
       } catch (error) {
         if (!isUniqueViolation(error)) throw error;

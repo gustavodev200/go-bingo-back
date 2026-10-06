@@ -9,6 +9,10 @@ const envSchema = z.object({
   DIRECT_URL: z.url(),
   CORS_ORIGIN: z.url(),
   SUPABASE_URL: z.url(),
+  // z.coerce.boolean() faria TRUST_PROXY=false virar `true` (Boolean("false")
+  // é truthy — qualquer string não vazia é). z.stringbool() interpreta o
+  // literal "true"/"false" (e variantes como "1"/"0") corretamente.
+  TRUST_PROXY: z.stringbool().default(false),
 });
 
 export type Env = z.infer<typeof envSchema>;
