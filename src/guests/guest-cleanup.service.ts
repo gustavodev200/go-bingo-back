@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import * as Sentry from '@sentry/nestjs';
 import { PrismaService } from '../core/prisma.service';
 
 export const GUEST_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -17,6 +18,7 @@ export class GuestCleanupService {
       this.logger.log({ event: 'guest_cleanup', ...result });
     } catch (error) {
       this.logger.error(error);
+      Sentry.captureException(error);
     }
   }
 

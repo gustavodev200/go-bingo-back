@@ -1,5 +1,8 @@
+import * as Sentry from '@sentry/nestjs';
 import type { PrismaService } from '../core/prisma.service';
 import { GuestCleanupService, GUEST_TTL_MS } from './guest-cleanup.service';
+
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
 
 function make(authExists: boolean) {
   const prisma = {
@@ -43,5 +46,14 @@ describe('GuestCleanupService', () => {
     const failing = make(true);
     failing.prisma.$queryRaw.mockRejectedValueOnce(new Error('db down'));
     await expect(failing.service.run()).resolves.toBeUndefined();
+  });
+
+  it('run() envia a falha do job ao Sentry (cron não tem quem veja o erro)', async () => {
+    const failing = make(true);
+    const boom = new Error('db down');
+    failing.prisma.$queryRaw.mockRejectedValueOnce(boom);
+    (Sentry.captureException as jest.Mock).mockClear();
+    await failing.service.run();
+    expect(Sentry.captureException).toHaveBeenCalledWith(boom);
   });
 });
