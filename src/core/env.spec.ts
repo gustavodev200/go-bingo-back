@@ -57,4 +57,13 @@ describe('loadEnv', () => {
       process.env = original;
     }
   });
+
+  it('SENTRY_DSN é opcional e validado como URL', () => {
+    expect(loadEnv({ ...valid }).SENTRY_DSN).toBeUndefined();
+    expect(
+      loadEnv({ ...valid, SENTRY_DSN: 'https://k@o1.ingest.sentry.io/1' })
+        .SENTRY_DSN,
+    ).toBe('https://k@o1.ingest.sentry.io/1');
+    expect(() => loadEnv({ ...valid, SENTRY_DSN: 'nao-e-url' })).toThrow();
+  });
 });

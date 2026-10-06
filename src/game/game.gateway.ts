@@ -7,6 +7,7 @@ import {
   SubscribeMessage,
   WebSocketGateway,
 } from '@nestjs/websockets';
+import * as Sentry from '@sentry/nestjs';
 import type { Namespace, Socket } from 'socket.io';
 import { z } from 'zod';
 import {
@@ -75,9 +76,10 @@ export class GameGateway
   afterInit(server: Namespace): void {
     this.publisher.attach(server);
     this.presence.setExpiryHandler((code, userId) => {
-      this.removeMember(code, userId, 'expired').catch((error: unknown) =>
-        this.logger.error(error),
-      );
+      this.removeMember(code, userId, 'expired').catch((error: unknown) => {
+        this.logger.error(error);
+        Sentry.captureException(error);
+      });
     });
     server.use((socket, next) => {
       const token: unknown = socket.handshake.auth?.token;
@@ -419,6 +421,7 @@ export class GameGateway
           error: { code: error.code, message: error.message },
         };
       this.logger.error(error);
+      Sentry.captureException(error);
       return {
         ok: false,
         error: { code: 'INTERNAL', message: 'Erro interno' },

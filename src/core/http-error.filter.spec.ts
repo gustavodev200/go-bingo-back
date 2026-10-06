@@ -6,8 +6,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ThrottlerException } from '@nestjs/throttler';
+import * as Sentry from '@sentry/nestjs';
 import { DomainError } from './domain-error';
 import { HttpErrorFilter, toHttpError } from './http-error.filter';
+
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
 
 function makeHost() {
   const json = jest.fn();
@@ -97,5 +100,24 @@ describe('HttpErrorFilter', () => {
     const boom = new Error('db password leaked');
     filter.catch(boom, makeHost().host);
     expect(logger).toHaveBeenCalledWith(boom);
+  });
+
+  it('envia ao Sentry só erro 500, nunca erro de domínio nem 4xx', () => {
+    const filter = new HttpErrorFilter();
+    jest
+      .spyOn(
+        (filter as unknown as { logger: { error: (e: unknown) => void } })
+          .logger,
+        'error',
+      )
+      .mockImplementation(() => undefined);
+    (Sentry.captureException as jest.Mock).mockClear();
+    const { host } = makeHost();
+    filter.catch(new DomainError('NOT_HOST', 'x'), host);
+    filter.catch(new NotFoundException(), host);
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    const boom = new Error('boom');
+    filter.catch(boom, host);
+    expect(Sentry.captureException).toHaveBeenCalledWith(boom);
   });
 });

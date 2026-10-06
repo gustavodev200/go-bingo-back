@@ -5,6 +5,7 @@ import {
   HttpException,
   Logger,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { ThrottlerException } from '@nestjs/throttler';
 import type { Response } from 'express';
 import type { ErrorCode } from '../contracts';
@@ -65,7 +66,10 @@ export class HttpErrorFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost) {
     const { status, body } = toHttpError(exception);
-    if (status === 500) this.logger.error(exception);
+    if (status === 500) {
+      this.logger.error(exception);
+      Sentry.captureException(exception);
+    }
     host.switchToHttp().getResponse<Response>().status(status).json(body);
   }
 }
