@@ -4,7 +4,8 @@
 cp .env.example .env          # preencha SUPABASE_URL com o seu projeto
 docker compose up -d          # Postgres local (cria go_bingo e go_bingo_test)
 npm install
-npx prisma migrate dev        # aplica migrations e gera o client
+npx prisma generate           # gera o client em src/generated (Prisma 7 não gera no migrate)
+npx prisma migrate dev        # aplica as migrations
 npm run start:dev             # http://localhost:3333 · socket em /game
 ```
 
