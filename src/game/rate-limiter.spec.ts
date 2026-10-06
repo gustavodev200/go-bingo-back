@@ -19,4 +19,10 @@ describe('RateLimiter', () => {
     limiter.forget('s1');
     expect(limiter.allow('s1:claim', 1, 2_000)).toBe(true);
   });
+
+  it('defaults to Date.now when no clock is injected', () => {
+    const limiter = new RateLimiter();
+    expect(limiter.allow('default-clock', 1, 60_000)).toBe(true);
+    expect(limiter.allow('default-clock', 1, 60_000)).toBe(false);
+  });
 });

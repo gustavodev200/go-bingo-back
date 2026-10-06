@@ -1,3 +1,8 @@
+// coverage: justificativa — declaração de módulo NestJS (wiring de DI puro,
+// sem branch/lógica de decisão); cada provider/controller listado aqui já é
+// exercitado por seus próprios testes unitários, e a composição em si é
+// validada pelos testes e2e, que de fato sobem a aplicação.
+/* istanbul ignore file */
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';

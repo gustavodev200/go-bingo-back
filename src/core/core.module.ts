@@ -1,3 +1,7 @@
+// coverage: justificativa — declaração de módulo NestJS (wiring de DI puro,
+// sem branch/lógica de decisão); os providers aqui registrados (env, random,
+// JWKS, PrismaService, JwtVerifier, HttpAuthGuard) já têm testes próprios.
+/* istanbul ignore file */
 import { Global, Module } from '@nestjs/common';
 import { createRemoteJWKSet } from 'jose';
 import { HttpAuthGuard } from './auth/http-auth.guard';

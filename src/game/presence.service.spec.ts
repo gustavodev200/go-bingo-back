@@ -62,4 +62,36 @@ describe('PresenceService', () => {
     jest.advanceTimersByTime(RECONNECT_GRACE_MS);
     expect(expired).not.toHaveBeenCalled();
   });
+
+  it('disconnect() on an unknown room/user is a safe no-op', () => {
+    const p = new PresenceService();
+    expect(p.disconnect('UNKNOWN', 'ghost', 's1')).toEqual({ offline: false });
+  });
+
+  it('remove() on an unknown room/user is a safe no-op', () => {
+    const p = new PresenceService();
+    expect(() => p.remove('UNKNOWN', 'ghost')).not.toThrow();
+  });
+
+  it('clearRoom() on an unknown room is a safe no-op', () => {
+    const p = new PresenceService();
+    expect(() => p.clearRoom('UNKNOWN')).not.toThrow();
+  });
+
+  it('onModuleDestroy clears every pending expiry timer across all rooms', () => {
+    const p = new PresenceService();
+    const expired = jest.fn();
+    p.setExpiryHandler(expired);
+    p.connect('ROOM01', 'u1', 's1');
+    p.connect('ROOM02', 'u2', 's2');
+    p.disconnect('ROOM01', 'u1', 's1');
+    p.disconnect('ROOM02', 'u2', 's2');
+
+    p.onModuleDestroy();
+
+    jest.advanceTimersByTime(RECONNECT_GRACE_MS);
+    expect(expired).not.toHaveBeenCalled();
+    expect(p.connectedSet('ROOM01').size).toBe(0);
+    expect(p.connectedSet('ROOM02').size).toBe(0);
+  });
 });

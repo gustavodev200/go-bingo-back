@@ -11,6 +11,8 @@ npm run start:dev             # http://localhost:3333 · socket em /game
 Testes: `npm test` (unitários) · `npm run test:db:reset && npm run test:e2e` (integração com Postgres).
 Contrato com o front: edite `src/contracts/` e rode `npm run contracts:sync`.
 
+Cobertura mínima: 80% (statements/branches/functions/lines), conforme a constituição do projeto (Princípio VIII). `npm run test:cov` roda local; o CI falha a build abaixo do limiar. Exceções documentadas com `// coverage: justificativa` nos arquivos: módulos NestJS (`*.module.ts`) e `src/main.ts` — wiring de DI/bootstrap sem lógica de decisão, já exercitados pelos testes e2e que de fato sobem a aplicação.
+
 # workspace-agents
 
 Workspace/template pessoal para desenvolvimento de software com agentes de

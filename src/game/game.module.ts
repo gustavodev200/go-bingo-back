@@ -1,3 +1,6 @@
+// coverage: justificativa — declaração de módulo NestJS (wiring de DI puro,
+// sem branch/lógica de decisão); cada provider listado já tem spec própria.
+/* istanbul ignore file */
 import { Module } from '@nestjs/common';
 import { ProfilesModule } from '../profiles/profiles.module';
 import { RoomsModule } from '../rooms/rooms.module';
