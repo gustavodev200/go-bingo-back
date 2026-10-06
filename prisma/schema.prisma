@@ -24,6 +24,7 @@ enum WinPattern {
   FULL_CARD
 }
 
+/// RLS ligada por migration (enable_rls); novas tabelas precisam do mesmo ALTER na migration que as cria.
 /// id = auth.users.id do Supabase (sem FK: schemas diferentes).
 model Profile {
   id          String       @id @db.Uuid
