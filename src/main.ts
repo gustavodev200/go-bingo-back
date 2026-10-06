@@ -8,9 +8,12 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { configureApp } from './configure-app';
 import { ENV, Env } from './core/env';
+import { buildLogger } from './core/logging';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    logger: buildLogger(process.env.NODE_ENV ?? 'development'),
+  });
   configureApp(app);
   await app.listen(app.get<Env>(ENV).PORT);
 }

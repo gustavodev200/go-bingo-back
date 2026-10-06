@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { Logger } from '@nestjs/common';
 import { ClientEvents, roomChannel, ServerEvents } from '../contracts';
 import { DomainError } from '../core/domain-error';
 import type { JwtVerifier } from '../core/auth/jwt-verifier';
@@ -368,6 +369,23 @@ describe('GameGateway.onJoin', () => {
     expect(deps.publisher.publicRoomsChanged).toHaveBeenCalledTimes(1);
   });
 
+  it('logs presence_reconnected when the user reconnects', async () => {
+    const deps = makeDepsWithConnect({ firstSocket: true, reconnected: true });
+    deps.membership.join.mockResolvedValue(undefined);
+    deps.snapshots.build.mockResolvedValue({ members: [] });
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const { socket } = makeSocket(user);
+
+    await deps.gateway.onJoin(asGatewaySocket(socket), { code: 'AAA234' });
+
+    expect(log).toHaveBeenCalledWith({
+      event: 'presence_reconnected',
+      roomCode: 'AAA234',
+      userId: user.id,
+    });
+    log.mockRestore();
+  });
+
   it('does not re-announce the member on a reconnect of an extra socket', async () => {
     const deps = makeDepsWithConnect({
       firstSocket: false,
@@ -627,11 +645,20 @@ describe('GameGateway.onClaim', () => {
       grid: [],
     };
     games.claim.mockResolvedValue({ gameId: 'g1', winner });
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
     const { socket } = makeSocket(user);
     socket.data.roomCode = 'ABC123';
     socket.rooms.add(roomChannel('ABC123'));
 
     const ack = await gateway.onClaim(asGatewaySocket(socket), {});
+
+    expect(log).toHaveBeenCalledWith({
+      event: 'bingo_won',
+      roomCode: 'ABC123',
+      gameId: 'g1',
+      userId: user.id,
+    });
+    log.mockRestore();
 
     expect(ack).toEqual({ ok: true, data: winner });
     expect(runner.stop).toHaveBeenCalledWith('g1');
@@ -641,6 +668,27 @@ describe('GameGateway.onClaim', () => {
       winner,
     );
     expect(publisher.publicRoomsChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs bingo_rejected when the claim is invalid', async () => {
+    const { gateway, games } = makeDeps();
+    games.claim.mockRejectedValue(
+      new DomainError('BINGO_INVALID', 'Cartela sem bingo'),
+    );
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { socket } = makeSocket(user);
+    socket.data.roomCode = 'ABC123';
+    socket.rooms.add(roomChannel('ABC123'));
+
+    const ack = await gateway.onClaim(asGatewaySocket(socket), {});
+
+    expect(ack).toMatchObject({ ok: false, error: { code: 'BINGO_INVALID' } });
+    expect(warn).toHaveBeenCalledWith({
+      event: 'bingo_rejected',
+      roomCode: 'ABC123',
+      userId: user.id,
+    });
+    warn.mockRestore();
   });
 
   it('enforces its own, stricter rate limit bucket', async () => {

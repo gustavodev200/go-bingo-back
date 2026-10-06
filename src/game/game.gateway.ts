@@ -169,6 +169,12 @@ export class GameGateway
             user.id,
             socket.id,
           );
+          if (reconnected)
+            this.logger.log({
+              event: 'presence_reconnected',
+              roomCode: code,
+              userId: user.id,
+            });
           const snapshot = await this.snapshots.build(code, user.id);
           if (firstSocket) {
             const member = snapshot.members.find((m) => m.userId === user.id);
@@ -306,7 +312,25 @@ export class GameGateway
       body,
       async (user) => {
         const code = this.requireRoom(socket);
-        const { gameId, winner } = await this.games.claim(code, user);
+        let claimed: Awaited<ReturnType<GamesService['claim']>>;
+        try {
+          claimed = await this.games.claim(code, user);
+        } catch (error) {
+          if (error instanceof DomainError && error.code === 'BINGO_INVALID')
+            this.logger.warn({
+              event: 'bingo_rejected',
+              roomCode: code,
+              userId: user.id,
+            });
+          throw error;
+        }
+        const { gameId, winner } = claimed;
+        this.logger.log({
+          event: 'bingo_won',
+          roomCode: code,
+          gameId,
+          userId: user.id,
+        });
         this.runner.stop(gameId);
         this.publisher.toRoom(code, ServerEvents.GAME_WON, winner);
         this.publisher.publicRoomsChanged();

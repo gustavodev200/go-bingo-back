@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ServerEvents } from '../contracts';
 import type { PrismaService } from '../core/prisma.service';
 import { GameRunner } from './game-runner.service';
@@ -41,8 +42,17 @@ describe('GameRunner.start', () => {
   it('announces the game, broadcasts snapshots and schedules the first tick', async () => {
     const { runner, games, publisher, timer } = makeDeps();
     games.start.mockResolvedValue({ gameId: 'g1', drawIntervalMs: 5_000 });
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
 
     await runner.start('ABC123', 'host');
+
+    expect(log).toHaveBeenCalledWith({
+      event: 'game_started',
+      roomCode: 'ABC123',
+      gameId: 'g1',
+      drawIntervalMs: 5_000,
+    });
+    log.mockRestore();
 
     expect(games.start).toHaveBeenCalledWith('ABC123', 'host');
     expect(publisher.toRoom).toHaveBeenCalledWith(
@@ -92,8 +102,17 @@ describe('GameRunner.tick', () => {
   it('announces the end of the game and does not reschedule when exhausted', async () => {
     const { runner, games, publisher, timer } = makeDeps();
     games.drawNext.mockResolvedValue({ kind: 'exhausted' });
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
 
     await runner.tick('g1', 'ABC123', 5_000);
+
+    expect(log).toHaveBeenCalledWith({
+      event: 'game_ended',
+      roomCode: 'ABC123',
+      gameId: 'g1',
+      reason: 'exhausted',
+    });
+    log.mockRestore();
 
     expect(publisher.toRoom).toHaveBeenCalledWith(
       'ABC123',
