@@ -712,6 +712,25 @@ describe('GameGateway.onClaim', () => {
 });
 
 describe('GameGateway.onReplay', () => {
+  it('rejects a replay from someone who is not the host', async () => {
+    const { gateway, membership, runner } = makeDeps();
+    membership.assertHost.mockRejectedValue(
+      new DomainError('NOT_HOST', 'Só o host pode fazer isso'),
+    );
+    const { socket } = makeSocket(user);
+    socket.data.roomCode = 'ABC123';
+    socket.rooms.add(roomChannel('ABC123'));
+
+    const ack = await gateway.onReplay(asGatewaySocket(socket), {});
+
+    expect(membership.assertHost).toHaveBeenCalledWith('ABC123', user.id);
+    expect(ack).toEqual({
+      ok: false,
+      error: { code: 'NOT_HOST', message: 'Só o host pode fazer isso' },
+    });
+    expect(runner.broadcastSnapshots).not.toHaveBeenCalled();
+  });
+
   it('rejects a replay while the previous game has not finished', async () => {
     const { gateway, membership } = makeDeps();
     membership.assertHost.mockResolvedValue({ status: 'IN_GAME' });
