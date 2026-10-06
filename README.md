@@ -14,6 +14,32 @@ Contrato com o front: edite `src/contracts/` e rode `npm run contracts:sync`.
 
 Cobertura mínima: 80% (statements/branches/functions/lines), conforme a constituição do projeto (Princípio VIII). `npm run test:cov` roda local; o CI falha a build abaixo do limiar. Exceções documentadas com `// coverage: justificativa` nos arquivos: módulos NestJS (`*.module.ts`) e `src/main.ts` — wiring de DI/bootstrap sem lógica de decisão, já exercitados pelos testes e2e que de fato sobem a aplicação.
 
+### Observabilidade
+
+- Sentry é opcional: sem `SENTRY_DSN` o SDK fica desligado (não deixe a variável vazia). `SENTRY_ENVIRONMENT` nomeia o ambiente.
+- `dataCollection` com tudo desligado: nada de IP, cookies, headers ou corpo de requisição.
+- Em produção os logs saem em JSON (uma linha por evento).
+- Eventos: `game_started`, `game_ended`, `bingo_won`, `bingo_rejected`, `presence_reconnected` e `guest_cleanup`. Os campos de contexto são só `roomCode`, `gameId` e `userId`.
+
+### Limpeza de convidados
+
+- Cron diário às 04:00 UTC (`GuestCleanupService.cleanup()`).
+- Regra de 30 dias: apaga `auth.users` anônimos sem login/refresh de sessão há 30 dias e, em seguida, os `Profile` de convidado órfãos.
+- Não roda quando o schema `auth` não existe (ex.: Postgres local do docker-compose).
+- Pendente: as colunas de `auth.sessions` (incluindo `refreshed_at`) ainda precisam ser verificadas contra um projeto Supabase real.
+
+### RLS
+
+Toda tabela nova precisa de `ENABLE ROW LEVEL SECURITY` na própria migration. `test/rls.e2e-spec.ts` falha se alguma tabela do schema `public` ficar sem RLS.
+
+### Proxy
+
+`TRUST_PROXY=true` agora significa confiar em exatamente 1 hop (o IP que o proxy acrescenta ao fim do `X-Forwarded-For`). Se um Cloudflare (ou outro proxy) for colocado na frente, a contagem de hops precisa ser revisada.
+
+### Rodando os testes novos
+
+`npm test` (unitários, inclui limpeza de convidados e logs) e `npm run test:db:reset && npm run test:e2e` (integração, inclui `test/rls.e2e-spec.ts`). Se um agente de IA invocar `npm run test:db:reset`, o guard de IA do Prisma pode bloquear o `migrate reset`: rode você mesmo, ou use `prisma migrate deploy` (com `.env.test`) num banco já limpo.
+
 # workspace-agents
 
 Workspace/template pessoal para desenvolvimento de software com agentes de
