@@ -29,6 +29,12 @@ export class GameRunner implements OnApplicationBootstrap, OnModuleDestroy {
 
   async start(code: string, hostId: string): Promise<void> {
     const { gameId, drawIntervalMs } = await this.games.start(code, hostId);
+    this.logger.log({
+      event: 'game_started',
+      roomCode: code,
+      gameId,
+      drawIntervalMs,
+    });
     this.publisher.toRoom(code, ServerEvents.GAME_STARTED, {
       gameId,
       drawIntervalMs,
@@ -51,6 +57,12 @@ export class GameRunner implements OnApplicationBootstrap, OnModuleDestroy {
       } else if (result.kind === 'skipped') {
         this.schedule(gameId, code, intervalMs);
       } else if (result.kind === 'exhausted') {
+        this.logger.log({
+          event: 'game_ended',
+          roomCode: code,
+          gameId,
+          reason: 'exhausted',
+        });
         this.publisher.toRoom(code, ServerEvents.GAME_ENDED, {
           reason: 'exhausted',
         });

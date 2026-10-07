@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { ClientEvents, roomChannel, ServerEvents } from '../contracts';
 import { DomainError } from '../core/domain-error';
 import type { JwtVerifier } from '../core/auth/jwt-verifier';
@@ -11,6 +13,8 @@ import type { MembershipService } from './membership.service';
 import type { PresenceService } from './presence.service';
 import type { RealtimePublisher } from './realtime-publisher';
 import type { SnapshotService } from './snapshot.service';
+
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
 
 function makeDeps() {
   const verifier = { verify: jest.fn() };
@@ -211,6 +215,30 @@ describe('GameGateway.afterInit', () => {
   });
 });
 
+describe('GameGateway presence expiry errors', () => {
+  it('logs and reports to Sentry when removing an expired member fails', async () => {
+    const { gateway, presence, membership } = makeDeps();
+    const boom = new Error('db down');
+    membership.leave.mockRejectedValue(boom);
+    const logger = jest
+      .spyOn(
+        (gateway as unknown as { logger: { error: (e: unknown) => void } })
+          .logger,
+        'error',
+      )
+      .mockImplementation(() => undefined);
+    (Sentry.captureException as jest.Mock).mockClear();
+    gateway.afterInit({ use: jest.fn() } as never);
+
+    const onExpired = presence.setExpiryHandler.mock.calls[0][0];
+    onExpired('ABC123', user.id);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(logger).toHaveBeenCalledWith(boom);
+    expect(Sentry.captureException).toHaveBeenCalledWith(boom);
+  });
+});
+
 describe('GameGateway.handleDisconnect', () => {
   it('does nothing when the socket never joined a room', () => {
     const { gateway, publisher } = makeDeps();
@@ -309,6 +337,7 @@ describe('GameGateway.onWatch / handle() wrapper', () => {
       error: { code: 'INTERNAL', message: 'Erro interno' },
     });
     expect(logger).toHaveBeenCalledWith(boom);
+    expect(Sentry.captureException).toHaveBeenCalledWith(boom);
   });
 
   it('rate-limits a burst of calls from the same socket', async () => {
@@ -366,6 +395,23 @@ describe('GameGateway.onJoin', () => {
       reconnected: false,
     });
     expect(deps.publisher.publicRoomsChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs presence_reconnected when the user reconnects', async () => {
+    const deps = makeDepsWithConnect({ firstSocket: true, reconnected: true });
+    deps.membership.join.mockResolvedValue(undefined);
+    deps.snapshots.build.mockResolvedValue({ members: [] });
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const { socket } = makeSocket(user);
+
+    await deps.gateway.onJoin(asGatewaySocket(socket), { code: 'AAA234' });
+
+    expect(log).toHaveBeenCalledWith({
+      event: 'presence_reconnected',
+      roomCode: 'AAA234',
+      userId: user.id,
+    });
+    log.mockRestore();
   });
 
   it('does not re-announce the member on a reconnect of an extra socket', async () => {
@@ -627,11 +673,20 @@ describe('GameGateway.onClaim', () => {
       grid: [],
     };
     games.claim.mockResolvedValue({ gameId: 'g1', winner });
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
     const { socket } = makeSocket(user);
     socket.data.roomCode = 'ABC123';
     socket.rooms.add(roomChannel('ABC123'));
 
     const ack = await gateway.onClaim(asGatewaySocket(socket), {});
+
+    expect(log).toHaveBeenCalledWith({
+      event: 'bingo_won',
+      roomCode: 'ABC123',
+      gameId: 'g1',
+      userId: user.id,
+    });
+    log.mockRestore();
 
     expect(ack).toEqual({ ok: true, data: winner });
     expect(runner.stop).toHaveBeenCalledWith('g1');
@@ -641,6 +696,27 @@ describe('GameGateway.onClaim', () => {
       winner,
     );
     expect(publisher.publicRoomsChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs bingo_rejected when the claim is invalid', async () => {
+    const { gateway, games } = makeDeps();
+    games.claim.mockRejectedValue(
+      new DomainError('BINGO_INVALID', 'Cartela sem bingo'),
+    );
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const { socket } = makeSocket(user);
+    socket.data.roomCode = 'ABC123';
+    socket.rooms.add(roomChannel('ABC123'));
+
+    const ack = await gateway.onClaim(asGatewaySocket(socket), {});
+
+    expect(ack).toMatchObject({ ok: false, error: { code: 'BINGO_INVALID' } });
+    expect(warn).toHaveBeenCalledWith({
+      event: 'bingo_rejected',
+      roomCode: 'ABC123',
+      userId: user.id,
+    });
+    warn.mockRestore();
   });
 
   it('enforces its own, stricter rate limit bucket', async () => {
@@ -664,6 +740,25 @@ describe('GameGateway.onClaim', () => {
 });
 
 describe('GameGateway.onReplay', () => {
+  it('rejects a replay from someone who is not the host', async () => {
+    const { gateway, membership, runner } = makeDeps();
+    membership.assertHost.mockRejectedValue(
+      new DomainError('NOT_HOST', 'Só o host pode fazer isso'),
+    );
+    const { socket } = makeSocket(user);
+    socket.data.roomCode = 'ABC123';
+    socket.rooms.add(roomChannel('ABC123'));
+
+    const ack = await gateway.onReplay(asGatewaySocket(socket), {});
+
+    expect(membership.assertHost).toHaveBeenCalledWith('ABC123', user.id);
+    expect(ack).toEqual({
+      ok: false,
+      error: { code: 'NOT_HOST', message: 'Só o host pode fazer isso' },
+    });
+    expect(runner.broadcastSnapshots).not.toHaveBeenCalled();
+  });
+
   it('rejects a replay while the previous game has not finished', async () => {
     const { gateway, membership } = makeDeps();
     membership.assertHost.mockResolvedValue({ status: 'IN_GAME' });

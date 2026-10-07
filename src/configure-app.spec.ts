@@ -39,4 +39,25 @@ describe('configureApp', () => {
     expect(useWebSocketAdapter).toHaveBeenCalledWith(expect.any(GameIoAdapter));
     expect(enableShutdownHooks).toHaveBeenCalledTimes(1);
   });
+
+  it('com TRUST_PROXY confia só no proxy imediato (1 hop), nunca no X-Forwarded-For inteiro', () => {
+    const env: Pick<Env, 'CORS_ORIGIN' | 'TRUST_PROXY'> = {
+      CORS_ORIGIN: 'https://front.example',
+      TRUST_PROXY: true,
+    };
+    const set = jest.fn();
+    const app = {
+      use: jest.fn(),
+      enableCors: jest.fn(),
+      useGlobalFilters: jest.fn(),
+      useWebSocketAdapter: jest.fn(),
+      enableShutdownHooks: jest.fn(),
+      get: jest.fn(() => env),
+      getHttpAdapter: () => ({ getInstance: () => ({ set }) }),
+    } as unknown as INestApplication;
+
+    configureApp(app);
+
+    expect(set).toHaveBeenCalledWith('trust proxy', 1);
+  });
 });

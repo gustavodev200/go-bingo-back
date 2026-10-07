@@ -5,10 +5,12 @@
 /* istanbul ignore file */
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { CoreModule } from './core/core.module';
 import { HttpThrottlerGuard } from './core/http-throttler.guard';
 import { GameModule } from './game/game.module';
+import { GuestsModule } from './guests/guests.module';
 import { HealthController } from './health/health.controller';
 import { ProfilesModule } from './profiles/profiles.module';
 import { RankingModule } from './ranking/ranking.module';
@@ -22,6 +24,8 @@ import { RoomsModule } from './rooms/rooms.module';
     RoomsModule,
     GameModule,
     RankingModule,
+    ScheduleModule.forRoot(),
+    GuestsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: HttpThrottlerGuard }],
