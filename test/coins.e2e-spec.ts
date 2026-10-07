@@ -5,6 +5,7 @@ import {
   DAILY_COINS,
   LOSS_COINS,
   WELCOME_COINS,
+  remainingForFullCard,
   WIN_COINS,
   type MeResponse,
 } from '../src/contracts';
@@ -87,7 +88,7 @@ describe('Moedas (e2e)', () => {
     ).toMatchObject({ cardRegens: 0 });
   });
 
-  it('partida: vencedor +100, perdedores −20 até zerar, cartela automática cobra até zerar', async () => {
+  it('partida cartela cheia: vencedor +200, perdedores −20 até zerar, cartela automática cobra até zerar', async () => {
     const host = await makeUser(t, 'Host', { coins: 100 });
     const rich = await makeUser(t, 'Rica', { coins: 100 });
     const poor = await makeUser(t, 'Pobre', { coins: CARD_COST + 3 });
@@ -110,8 +111,8 @@ describe('Moedas (e2e)', () => {
       isAnonymous: false,
     });
 
-    expect(winner.coinsAwarded).toBe(WIN_COINS);
-    expect(await coinsOf(host.id)).toBe(100 - CARD_COST + WIN_COINS);
+    expect(winner.coinsAwarded).toBe(WIN_COINS.FULL_CARD);
+    expect(await coinsOf(host.id)).toBe(100 - CARD_COST + WIN_COINS.FULL_CARD);
     expect(await coinsOf(rich.id)).toBe(100 - CARD_COST - LOSS_COINS);
     expect(await coinsOf(poor.id)).toBe(0); // tinha 3 depois da cartela
     expect(await coinsOf(broke.id)).toBe(0);
@@ -120,6 +121,34 @@ describe('Moedas (e2e)', () => {
       { amount: -3, reason: 'LOSS' },
     ]);
     expect(await ledgerOf(broke.id)).toEqual([{ amount: -2, reason: 'CARD' }]);
+  });
+
+  it('partida Quina: bate com uma linha antes da cartela cheia e ganha +100', async () => {
+    const host = await makeUser(t, 'Host', { coins: 100 });
+    const ana = await makeUser(t, 'Ana', { coins: 100 });
+    const room = await makeRoom(t, host.id, { winPattern: 'LINE' });
+    await membership.join(room.code, ana.id);
+    for (const p of [host, ana]) await membership.generateCard(room.code, p.id);
+
+    const { gameId } = await games.start(room.code, host.id);
+    for (let i = 0; i < 75; i++) {
+      await games.drawNext(gameId);
+      if ((await games.progress(gameId))[host.id] === 0) break;
+    }
+    const card = await t.prisma.card.findUniqueOrThrow({
+      where: { gameId_userId: { gameId, userId: host.id } },
+    });
+    const drawn = new Set(await games.drawnNumbers(gameId));
+    // Uma linha fecha bem antes das 24 casas.
+    expect(remainingForFullCard(card.grid, drawn)).toBeGreaterThan(0);
+
+    const { winner } = await games.claim(room.code, {
+      id: host.id,
+      isAnonymous: false,
+    });
+    expect(winner.coinsAwarded).toBe(WIN_COINS.LINE);
+    expect(await coinsOf(host.id)).toBe(100 - CARD_COST + WIN_COINS.LINE);
+    expect(await coinsOf(ana.id)).toBe(100 - CARD_COST - LOSS_COINS);
   });
 
   it('o banco recusa saldo negativo mesmo fora das regras do serviço', async () => {

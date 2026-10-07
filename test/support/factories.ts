@@ -38,7 +38,11 @@ export async function makeUser(
 export async function makeRoom(
   t: TestApp,
   hostId: string,
-  overrides: { maxPlayers?: number; isPublic?: boolean } = {},
+  overrides: {
+    maxPlayers?: number;
+    isPublic?: boolean;
+    winPattern?: 'FULL_CARD' | 'LINE';
+  } = {},
 ) {
   const room = await t.prisma.room.create({
     data: {
@@ -47,6 +51,7 @@ export async function makeRoom(
       hostId,
       maxPlayers: overrides.maxPlayers ?? 10,
       isPublic: overrides.isPublic ?? true,
+      winPattern: overrides.winPattern,
       members: { create: { userId: hostId, slot: 0 } },
     },
   });

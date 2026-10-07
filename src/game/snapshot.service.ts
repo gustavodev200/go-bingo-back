@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { remainingForFullCard, type RoomSnapshot } from '../contracts';
+import { remainingFor, type RoomSnapshot } from '../contracts';
 import { DomainError } from '../core/domain-error';
 import { PrismaService } from '../core/prisma.service';
 import { GamesService } from './games.service';
@@ -45,6 +45,7 @@ export class SnapshotService {
       maxPlayers: room.maxPlayers,
       isPublic: room.isPublic,
       status: room.status,
+      winPattern: room.winPattern,
       members: room.members.map((m) => ({
         userId: m.userId,
         nickname: m.profile.nickname ?? 'Jogador',
@@ -64,7 +65,7 @@ export class SnapshotService {
             remaining: Object.fromEntries(
               cards.map((c) => [
                 c.userId,
-                remainingForFullCard(c.grid, drawnSet),
+                remainingFor(room.winPattern, c.grid, drawnSet),
               ]),
             ),
           }

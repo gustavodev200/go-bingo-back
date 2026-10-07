@@ -100,16 +100,19 @@ describe('SnapshotService.build', () => {
       maxPlayers: 10,
       isPublic: false,
       status: 'IN_GAME',
+      winPattern: 'LINE',
       drawIntervalMs: 5_000,
       members: [
         { userId: 'host', slot: 0, profile: { nickname: 'H', isGuest: false } },
       ],
     });
     prisma.game.findFirst.mockResolvedValue({ id: 'g1' });
+    // Quina: coluna 0 (índices 0–4) com 1 e 2 sorteados → faltam 3
+    const grid = Array.from({ length: 25 }, (_, i) => (i === 12 ? 0 : i + 1));
     prisma.card.findMany.mockResolvedValue([
-      { id: 'c1', userId: 'host', grid: [1, 2, 3], marked: [] },
+      { id: 'c1', userId: 'host', grid, marked: [] },
     ]);
-    const games = { drawnNumbers: jest.fn().mockResolvedValue([1]) };
+    const games = { drawnNumbers: jest.fn().mockResolvedValue([1, 2]) };
     const connectedSet = jest.fn().mockReturnValue(new Set());
     const service = new SnapshotService(
       prisma as unknown as PrismaService,
@@ -123,11 +126,12 @@ describe('SnapshotService.build', () => {
       where: { roomId: 'r1', status: 'IN_PROGRESS' },
     });
     expect(games.drawnNumbers).toHaveBeenCalledWith('g1');
+    expect(snapshot.winPattern).toBe('LINE');
     expect(snapshot.game).toEqual({
       id: 'g1',
-      drawn: [1],
+      drawn: [1, 2],
       drawIntervalMs: 5_000,
-      remaining: { host: 2 },
+      remaining: { host: 3 },
     });
   });
 

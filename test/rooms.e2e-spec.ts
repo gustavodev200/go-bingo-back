@@ -79,6 +79,28 @@ describe('/rooms', () => {
     ]);
   });
 
+  it('stores the win mode (default full card) and rejects unknown modes', async () => {
+    const token = await userWithNickname();
+    const send = (body: object) =>
+      request(t.url)
+        .post('/rooms')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Amigos', maxPlayers: 10, isPublic: true, ...body });
+
+    const quina = await send({ winPattern: 'LINE' }).expect(201);
+    const cheia = await send({}).expect(201);
+    expect((await send({ winPattern: 'HEXAGON' })).status).toBe(400);
+
+    const patternOf = async (res: request.Response) =>
+      (
+        await t.prisma.room.findUniqueOrThrow({
+          where: { code: (res.body as RoomCreateResponse).code },
+        })
+      ).winPattern;
+    expect(await patternOf(quina)).toBe('LINE');
+    expect(await patternOf(cheia)).toBe('FULL_CARD');
+  });
+
   it('uses the server default draw interval, or the one the host picked within limits', async () => {
     const token = await userWithNickname();
     const send = (body: object) =>
@@ -133,6 +155,7 @@ describe('/rooms', () => {
         playerCount: 1,
         maxPlayers: 10,
         status: 'WAITING',
+        winPattern: 'FULL_CARD',
       },
     ]);
   });

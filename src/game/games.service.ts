@@ -2,11 +2,12 @@ import { Inject, Injectable } from '@nestjs/common';
 import { chargeUpTo, credit } from '../coins/ledger';
 import {
   CARD_COST,
+  DEFAULT_WIN_PATTERN,
   FREE_CELL,
   FREE_INDEX,
   letterFor,
   LOSS_COINS,
-  remainingForFullCard,
+  remainingFor,
   WIN_COINS,
   WIN_POINTS,
   type NumberDrawn,
@@ -184,15 +185,16 @@ export class GamesService {
     code: string,
     user: AuthUser,
   ): Promise<{ gameId: string; winner: Winner }> {
-    const { game, card } = await this.activeCard(code, user.id);
+    const { room, game, card } = await this.activeCard(code, user.id);
     const drawn = new Set(await this.drawnNumbers(game.id));
-    if (remainingForFullCard(card.grid, drawn) > 0)
+    if (remainingFor(room.winPattern, card.grid, drawn) > 0)
       throw new DomainError(
         'BINGO_INVALID',
         'Bingo inválido: ainda faltam números',
       );
 
     const pointsAwarded = user.isAnonymous ? 0 : WIN_POINTS;
+    const coinsAwarded = WIN_COINS[room.winPattern];
     const winner = await this.prisma.$transaction(async (tx) => {
       const won = await tx.game.updateMany({
         where: { id: game.id, status: 'IN_PROGRESS', winnerId: null },
@@ -210,7 +212,7 @@ export class GamesService {
       });
       // Moedas: vencedor ganha; todo mundo que tinha cartela nesta partida perde (até zerar),
       // inclusive quem saiu no meio — sair não livra da perda.
-      await credit(tx, user.id, WIN_COINS, 'WIN', game.id);
+      await credit(tx, user.id, coinsAwarded, 'WIN', game.id);
       const losers = await tx.card.findMany({
         where: { gameId: game.id, userId: { not: user.id } },
         select: { userId: true },
@@ -226,7 +228,7 @@ export class GamesService {
         userId: user.id,
         nickname: profile.nickname ?? 'Jogador',
         pointsAwarded,
-        coinsAwarded: WIN_COINS,
+        coinsAwarded,
         grid: card.grid,
       };
     });
@@ -234,7 +236,11 @@ export class GamesService {
   }
 
   async progress(gameId: string): Promise<Record<string, number>> {
-    const [cards, drawn] = await Promise.all([
+    const [game, cards, drawn] = await Promise.all([
+      this.prisma.game.findUnique({
+        where: { id: gameId },
+        select: { room: { select: { winPattern: true } } },
+      }),
       this.prisma.card.findMany({
         where: { gameId },
         select: { userId: true, grid: true },
@@ -242,8 +248,9 @@ export class GamesService {
       this.drawnNumbers(gameId),
     ]);
     const set = new Set(drawn);
+    const pattern = game?.room.winPattern ?? DEFAULT_WIN_PATTERN;
     return Object.fromEntries(
-      cards.map((c) => [c.userId, remainingForFullCard(c.grid, set)]),
+      cards.map((c) => [c.userId, remainingFor(pattern, c.grid, set)]),
     );
   }
 
@@ -292,7 +299,7 @@ export class GamesService {
     });
     if (!card)
       throw new DomainError('NOT_IN_ROOM', 'Você não está nesta partida');
-    return { game, card };
+    return { room, game, card };
   }
 }
 

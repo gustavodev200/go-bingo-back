@@ -572,8 +572,15 @@ describe('GamesService.mark', () => {
 });
 
 describe('GamesService.claim', () => {
-  function setupActiveCard(prisma: ReturnType<typeof makePrisma>) {
-    prisma.room.findUnique.mockResolvedValue({ id: 'r1', status: 'WAITING' });
+  function setupActiveCard(
+    prisma: ReturnType<typeof makePrisma>,
+    winPattern: 'FULL_CARD' | 'LINE' = 'FULL_CARD',
+  ) {
+    prisma.room.findUnique.mockResolvedValue({
+      id: 'r1',
+      status: 'WAITING',
+      winPattern,
+    });
     prisma.game.findFirst.mockResolvedValue({
       id: 'g1',
       roomId: 'r1',
@@ -648,7 +655,7 @@ describe('GamesService.claim', () => {
         userId: 'u1',
         nickname: 'Fulano',
         pointsAwarded: WIN_POINTS,
-        coinsAwarded: WIN_COINS,
+        coinsAwarded: WIN_COINS.FULL_CARD,
         grid: [1, 2],
       },
     });
@@ -718,10 +725,10 @@ describe('GamesService.claim', () => {
       isAnonymous: true,
     });
 
-    expect(result.winner.coinsAwarded).toBe(WIN_COINS);
+    expect(result.winner.coinsAwarded).toBe(WIN_COINS.FULL_CARD);
     expect(prisma.profile.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
-      data: { coins: { increment: WIN_COINS } },
+      data: { coins: { increment: WIN_COINS.FULL_CARD } },
     });
     expect(prisma.card.findMany).toHaveBeenCalledWith({
       where: { gameId: 'g1', userId: { not: 'u1' } },
@@ -739,7 +746,92 @@ describe('GamesService.claim', () => {
   });
 });
 
+describe('GamesService.claim in Quina (LINE) rooms', () => {
+  /** Grade coluna-major com números = índice + 1 e centro FREE. */
+  const grid = Array.from({ length: 25 }, (_, i) =>
+    i === FREE_INDEX ? 0 : i + 1,
+  );
+
+  function setup(drawn: number[]) {
+    const prisma = makePrisma();
+    prisma.room.findUnique.mockResolvedValue({
+      id: 'r1',
+      status: 'IN_GAME',
+      winPattern: 'LINE',
+    });
+    prisma.game.findFirst.mockResolvedValue({
+      id: 'g1',
+      roomId: 'r1',
+      status: 'IN_PROGRESS',
+    });
+    prisma.roomMember.findUnique.mockResolvedValue({ userId: 'u1' });
+    prisma.card.findUnique.mockResolvedValue({ id: 'c1', grid, marked: [] });
+    prisma.draw.findMany.mockResolvedValue(drawn.map((number) => ({ number })));
+    prisma.game.updateMany.mockResolvedValue({ count: 1 });
+    prisma.profile.update.mockResolvedValue({ nickname: 'Fulano' });
+    return {
+      prisma,
+      service: new GamesService(prisma as unknown as PrismaService, random),
+    };
+  }
+
+  it('accepts a middle row through the free center with only 4 numbers and pays the Quina prize', async () => {
+    // linha 2 (row = 2): índices 2, 7, 12 (FREE), 17, 22
+    const { prisma, service } = setup([3, 8, 18, 23]);
+
+    const result = await service.claim('ABC123', {
+      id: 'u1',
+      isAnonymous: false,
+    });
+
+    expect(result.winner.coinsAwarded).toBe(WIN_COINS.LINE);
+    expect(prisma.profile.update).toHaveBeenCalledWith({
+      where: { id: 'u1' },
+      data: { coins: { increment: WIN_COINS.LINE } },
+    });
+  });
+
+  it('accepts a full column', async () => {
+    const { service } = setup([1, 2, 3, 4, 5]);
+
+    await expect(
+      service.claim('ABC123', { id: 'u1', isAnonymous: false }),
+    ).resolves.toBeDefined();
+  });
+
+  it('rejects scattered numbers that close no line', async () => {
+    const { service } = setup([1, 7, 14, 20]);
+
+    await expect(
+      service.claim('ABC123', { id: 'u1', isAnonymous: false }),
+    ).rejects.toMatchObject({ code: 'BINGO_INVALID' });
+  });
+});
+
 describe('GamesService read helpers', () => {
+  it('progress() counts the closest line in Quina rooms', async () => {
+    const prisma = makePrisma();
+    prisma.game.findUnique.mockResolvedValue({
+      room: { winPattern: 'LINE' },
+    });
+    const grid = Array.from({ length: 25 }, (_, i) =>
+      i === FREE_INDEX ? 0 : i + 1,
+    );
+    prisma.card.findMany.mockResolvedValue([{ userId: 'u1', grid }]);
+    // diagonal 0, 6, 12 (FREE), 18, 24 → falta só o 25
+    prisma.draw.findMany.mockResolvedValue([
+      { number: 1 },
+      { number: 7 },
+      { number: 19 },
+    ]);
+    const service = new GamesService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+
+    await expect(service.progress('g1')).resolves.toEqual({ u1: 1 });
+  });
+
   it('progress() maps remaining counts per player', async () => {
     const prisma = makePrisma();
     prisma.card.findMany.mockResolvedValue([

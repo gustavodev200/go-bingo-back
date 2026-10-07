@@ -20,8 +20,10 @@ enum GameStatus {
   CANCELLED
 }
 
+/// FULL_CARD = cartela cheia; LINE = quina (linha, coluna ou diagonal).
 enum WinPattern {
   FULL_CARD
+  LINE
 }
 
 enum CoinReason {

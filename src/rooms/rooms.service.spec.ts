@@ -166,6 +166,7 @@ describe('RoomsService', () => {
         name: 'Sala',
         maxPlayers: 10,
         status: 'WAITING',
+        winPattern: 'LINE',
         _count: { members: 3 },
       },
     ]);
@@ -181,6 +182,7 @@ describe('RoomsService', () => {
         playerCount: 3,
         maxPlayers: 10,
         status: 'WAITING',
+        winPattern: 'LINE',
       },
     ]);
   });
@@ -210,6 +212,7 @@ describe('RoomsService', () => {
       name: 'Sala',
       maxPlayers: 25,
       status: 'IN_GAME',
+      winPattern: 'FULL_CARD',
       _count: { members: 7 },
     });
     const service = new RoomsService(
@@ -223,6 +226,7 @@ describe('RoomsService', () => {
       playerCount: 7,
       maxPlayers: 25,
       status: 'IN_GAME',
+      winPattern: 'FULL_CARD',
     });
   });
 });

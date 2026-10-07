@@ -83,6 +83,7 @@ export class RoomsService {
       playerCount: r._count.members,
       maxPlayers: r.maxPlayers,
       status: r.status,
+      winPattern: r.winPattern,
     }));
   }
 
@@ -99,6 +100,7 @@ export class RoomsService {
       playerCount: room._count.members,
       maxPlayers: room.maxPlayers,
       status: room.status,
+      winPattern: room.winPattern,
     };
   }
 }
