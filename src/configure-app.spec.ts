@@ -7,7 +7,7 @@ import { GameIoAdapter } from './game/game-io.adapter';
 describe('configureApp', () => {
   it('wires security headers, CORS, the error filter, the ws adapter and shutdown hooks', () => {
     const env: Pick<Env, 'CORS_ORIGIN'> = {
-      CORS_ORIGIN: 'https://front.example',
+      CORS_ORIGIN: ['https://front.example'],
     };
     const use = jest.fn<void, [unknown]>();
     const enableCors = jest.fn();
@@ -33,7 +33,7 @@ describe('configureApp', () => {
     expect(use).toHaveBeenCalledTimes(1);
     expect(typeof use.mock.calls[0][0]).toBe('function');
     expect(enableCors).toHaveBeenCalledWith({
-      origin: 'https://front.example',
+      origin: ['https://front.example'],
     });
     expect(useGlobalFilters).toHaveBeenCalledWith(expect.any(HttpErrorFilter));
     expect(useWebSocketAdapter).toHaveBeenCalledWith(expect.any(GameIoAdapter));
@@ -42,7 +42,7 @@ describe('configureApp', () => {
 
   it('com TRUST_PROXY confia só no proxy imediato (1 hop), nunca no X-Forwarded-For inteiro', () => {
     const env: Pick<Env, 'CORS_ORIGIN' | 'TRUST_PROXY'> = {
-      CORS_ORIGIN: 'https://front.example',
+      CORS_ORIGIN: ['https://front.example'],
       TRUST_PROXY: true,
     };
     const set = jest.fn();

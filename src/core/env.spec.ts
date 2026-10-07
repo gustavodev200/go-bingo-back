@@ -28,6 +28,20 @@ describe('loadEnv', () => {
     );
   });
 
+  it('CORS_ORIGIN aceita uma ou várias origens separadas por vírgula', () => {
+    expect(loadEnv(valid).CORS_ORIGIN).toEqual(['http://localhost:3000']);
+    expect(
+      loadEnv({
+        ...valid,
+        CORS_ORIGIN: 'http://localhost:3000, https://go-bingo-front.vercel.app',
+      }).CORS_ORIGIN,
+    ).toEqual(['http://localhost:3000', 'https://go-bingo-front.vercel.app']);
+    expect(() => loadEnv({ ...valid, CORS_ORIGIN: '' })).toThrow(/CORS_ORIGIN/);
+    expect(() =>
+      loadEnv({ ...valid, CORS_ORIGIN: 'http://localhost:3000,nao-e-url' }),
+    ).toThrow(/CORS_ORIGIN/);
+  });
+
   it('coerces PORT', () => {
     expect(loadEnv({ ...valid, PORT: '0' }).PORT).toBe(0);
   });

@@ -5,7 +5,7 @@ import type { Server, ServerOptions } from 'socket.io';
 export class GameIoAdapter extends IoAdapter {
   constructor(
     app: INestApplicationContext,
-    private readonly origin: string,
+    private readonly origin: string | string[],
   ) {
     super(app);
   }

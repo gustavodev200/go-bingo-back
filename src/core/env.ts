@@ -15,7 +15,16 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(0).default(3333),
   DATABASE_URL: z.url(),
   DIRECT_URL: z.url(),
-  CORS_ORIGIN: z.url(),
+  // Uma ou mais origens separadas por vírgula (ex.: front local + front em produção).
+  CORS_ORIGIN: z
+    .string()
+    .transform((v) =>
+      v
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.url()).min(1)),
   SUPABASE_URL: z.url(),
   SENTRY_DSN: z.preprocess(emptyToUndefined, z.url().optional()),
   SENTRY_ENVIRONMENT: z.preprocess(
