@@ -425,4 +425,53 @@ describe('GameGateway', () => {
     const presence = t.app.get(PresenceService);
     expect(presence.connectedSet(room.code).has(ana.id)).toBe(false);
   });
+
+  it('broadcasts emotes to everyone in the room, sender included', async () => {
+    const { host, hs, as } = await roomWithTwo();
+    const seenByAna = next<{ userId: string; emote: string }>(
+      as,
+      'room:emoted',
+    );
+    const seenByHost = next<{ userId: string; emote: string }>(
+      hs,
+      'room:emoted',
+    );
+
+    await expect(ack(hs, 'room:emote', { emote: 'fire' })).resolves.toEqual({
+      ok: true,
+      data: null,
+    });
+
+    await expect(seenByAna).resolves.toEqual({
+      userId: host.id,
+      emote: 'fire',
+    });
+    await expect(seenByHost).resolves.toEqual({
+      userId: host.id,
+      emote: 'fire',
+    });
+  });
+
+  it('a late joiner watches as spectator and is told when every player left', async () => {
+    const { room, hs, as } = await roomWithTwo();
+    await ack(hs, 'card:generate');
+    await ack(as, 'card:generate');
+    await expect(ack(hs, 'game:start')).resolves.toMatchObject({ ok: true });
+
+    const bia = await makeUser(t, 'Bia');
+    const bs = await client(bia.token);
+    const joined = await ack<{
+      ok: true;
+      data: { status: string; myCard: null; members: unknown[] };
+    }>(bs, 'room:join', { code: room.code });
+    expect(joined.ok).toBe(true);
+    expect(joined.data.status).toBe('IN_GAME');
+    expect(joined.data.myCard).toBeNull();
+    expect(joined.data.members).toHaveLength(3);
+
+    await ack(as, 'room:leave');
+    const ended = next<{ reason: string }>(bs, 'game:ended');
+    await ack(hs, 'room:leave');
+    await expect(ended).resolves.toEqual({ reason: 'no_players' });
+  });
 });

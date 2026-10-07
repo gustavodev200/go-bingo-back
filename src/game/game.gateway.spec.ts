@@ -864,3 +864,83 @@ describe('GameGateway: game nobody is playing anymore', () => {
     );
   });
 });
+
+describe('GameGateway.onEmote', () => {
+  function inRoom() {
+    const { socket } = makeSocket(user);
+    socket.data.roomCode = 'ABC123';
+    socket.rooms.add(roomChannel('ABC123'));
+    return socket;
+  }
+
+  it('broadcasts the emote to the whole room (sender included)', async () => {
+    const { gateway, publisher } = makeDeps();
+
+    const ack = await gateway.onEmote(asGatewaySocket(inRoom()), {
+      emote: 'clap',
+    });
+
+    expect(ack).toEqual({ ok: true, data: null });
+    expect(publisher.toRoom).toHaveBeenCalledWith(
+      'ABC123',
+      ServerEvents.EMOTED,
+      {
+        userId: user.id,
+        emote: 'clap',
+      },
+    );
+  });
+
+  it('rejects emotes outside the fixed set', async () => {
+    const { gateway, publisher } = makeDeps();
+
+    const ack = await gateway.onEmote(asGatewaySocket(inRoom()), {
+      emote: '<b>oi</b>',
+    });
+
+    expect(ack).toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_PAYLOAD' },
+    });
+    expect(publisher.toRoom).not.toHaveBeenCalled();
+  });
+
+  it('requires being in a room', async () => {
+    const { gateway } = makeDeps();
+    const { socket } = makeSocket(user);
+
+    const ack = await gateway.onEmote(asGatewaySocket(socket), {
+      emote: 'fire',
+    });
+
+    expect(ack).toMatchObject({ ok: false, error: { code: 'NOT_IN_ROOM' } });
+  });
+
+  it('throttles bursts: one emote per 1.5 s per socket', async () => {
+    const { gateway, publisher } = makeDeps();
+    const socket = inRoom();
+
+    await gateway.onEmote(asGatewaySocket(socket), { emote: 'clap' });
+    const second = await gateway.onEmote(asGatewaySocket(socket), {
+      emote: 'wow',
+    });
+
+    expect(second).toMatchObject({
+      ok: false,
+      error: { code: 'RATE_LIMITED' },
+    });
+    expect(publisher.toRoom).toHaveBeenCalledTimes(1);
+  });
+
+  it('emote throttling does not eat into the regular action budget', async () => {
+    const { gateway, games } = makeDeps();
+    games.mark.mockResolvedValue([0]);
+    const socket = inRoom();
+
+    await gateway.onEmote(asGatewaySocket(socket), { emote: 'clap' });
+    await gateway.onEmote(asGatewaySocket(socket), { emote: 'clap' });
+    const mark = await gateway.onMark(asGatewaySocket(socket), { index: 0 });
+
+    expect(mark).toEqual({ ok: true, data: { marked: [0] } });
+  });
+});

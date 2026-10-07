@@ -12,6 +12,7 @@ import type { Namespace, Socket } from 'socket.io';
 import { z } from 'zod';
 import {
   ClientEvents,
+  emotePayloadSchema,
   emptyPayloadSchema,
   joinRoomPayloadSchema,
   kickPayloadSchema,
@@ -44,7 +45,7 @@ interface SocketData {
 }
 type AnyEvents = { [event: string]: (...args: unknown[]) => void };
 type GameSocket = Socket<AnyEvents, AnyEvents, AnyEvents, SocketData>;
-type Limit = 'default' | 'claim';
+type Limit = 'default' | 'claim' | 'emote';
 
 const LIMITS: Record<
   Limit,
@@ -52,6 +53,8 @@ const LIMITS: Record<
 > = {
   default: { suffix: '', limit: 10, windowMs: 1_000 },
   claim: { suffix: ':claim', limit: 1, windowMs: 2_000 },
+  // Balde próprio: rajada de emotes não gasta o orçamento das ações do jogo.
+  emote: { suffix: ':emote', limit: 1, windowMs: 1_500 },
 };
 
 @WebSocketGateway({ namespace: '/game' })
@@ -360,6 +363,24 @@ export class GameGateway
           );
         await this.runner.broadcastSnapshots(code);
         return null;
+      },
+    );
+  }
+
+  @SubscribeMessage(ClientEvents.ROOM_EMOTE)
+  onEmote(@ConnectedSocket() socket: GameSocket, @MessageBody() body: unknown) {
+    return this.handle(
+      socket,
+      'emote',
+      emotePayloadSchema,
+      body,
+      (user, { emote }) => {
+        const code = this.requireRoom(socket);
+        this.publisher.toRoom(code, ServerEvents.EMOTED, {
+          userId: user.id,
+          emote,
+        });
+        return Promise.resolve(null);
       },
     );
   }
