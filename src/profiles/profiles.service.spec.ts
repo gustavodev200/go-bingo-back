@@ -1,4 +1,4 @@
-import { DAILY_COINS, WELCOME_COINS } from '../contracts';
+import { COIN_HISTORY_LIMIT, DAILY_COINS, WELCOME_COINS } from '../contracts';
 import type { AuthUser } from '../core/auth/jwt-verifier';
 import { DomainError } from '../core/domain-error';
 import type { PrismaService } from '../core/prisma.service';
@@ -14,7 +14,8 @@ function makePrisma() {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
-    coinTransaction: { create: jest.fn() },
+    coinTransaction: { create: jest.fn(), findMany: jest.fn() },
+    game: { count: jest.fn() },
   };
   return {
     ...models,
@@ -203,6 +204,43 @@ describe('ProfilesService.setNickname', () => {
       isGuest: false,
       points: 10,
       coins: 120,
+    });
+  });
+});
+
+describe('ProfilesService.stats', () => {
+  it('counts finished wins and returns the latest coin movements, newest first', async () => {
+    const prisma = makePrisma();
+    prisma.profile.findUniqueOrThrow.mockResolvedValue(row);
+    prisma.game.count.mockResolvedValue(1);
+    const at = new Date('2026-10-07T12:00:00.000Z');
+    prisma.coinTransaction.findMany.mockResolvedValue([
+      {
+        id: 't2',
+        amount: -5,
+        reason: 'CARD',
+        createdAt: at,
+        userId: 'u1',
+        gameId: null,
+      },
+    ]);
+    const service = new ProfilesService(prisma as unknown as PrismaService);
+
+    await expect(service.stats('u1')).resolves.toEqual({
+      gamesPlayed: 2,
+      wins: 1,
+      points: 10,
+      coinHistory: [
+        { id: 't2', amount: -5, reason: 'CARD', createdAt: at.toISOString() },
+      ],
+    });
+    expect(prisma.game.count).toHaveBeenCalledWith({
+      where: { winnerId: 'u1', status: 'FINISHED' },
+    });
+    expect(prisma.coinTransaction.findMany).toHaveBeenCalledWith({
+      where: { userId: 'u1' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: COIN_HISTORY_LIMIT,
     });
   });
 });

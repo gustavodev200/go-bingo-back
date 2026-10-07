@@ -99,6 +99,7 @@ model Game {
 
   @@index([status])
   @@index([roomId, status])
+  @@index([winnerId])
 }
 
 model Draw {

@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { credit, saoPauloDay } from '../coins/ledger';
 import {
+  COIN_HISTORY_LIMIT,
   DAILY_COINS,
   isNicknameAllowed,
   nicknameSchema,
   WELCOME_COINS,
   type Profile,
+  type ProfileStats,
 } from '../contracts';
 import type { AuthUser } from '../core/auth/jwt-verifier';
 import { DomainError } from '../core/domain-error';
@@ -87,6 +89,32 @@ export class ProfilesService {
         data: { nickname: parsed.data },
       }),
     );
+  }
+
+  /** Partidas, vitórias, pontos e as últimas movimentações de moedas (sem a posição no ranking). */
+  async stats(userId: string): Promise<Omit<ProfileStats, 'rank'>> {
+    const [profile, wins, history] = await Promise.all([
+      this.prisma.profile.findUniqueOrThrow({ where: { id: userId } }),
+      this.prisma.game.count({
+        where: { winnerId: userId, status: 'FINISHED' },
+      }),
+      this.prisma.coinTransaction.findMany({
+        where: { userId },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: COIN_HISTORY_LIMIT,
+      }),
+    ]);
+    return {
+      gamesPlayed: profile.gamesPlayed,
+      wins,
+      points: profile.points,
+      coinHistory: history.map((t) => ({
+        id: t.id,
+        amount: t.amount,
+        reason: t.reason,
+        createdAt: t.createdAt.toISOString(),
+      })),
+    };
   }
 
   toDto(row: ProfileRow): Profile {

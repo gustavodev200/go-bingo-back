@@ -29,7 +29,7 @@ export class RankingService {
     };
   }
 
-  private async position(viewerId: string): Promise<RankingResponse['me']> {
+  async position(viewerId: string): Promise<RankingResponse['me']> {
     const me = await this.prisma.profile.findUnique({
       where: { id: viewerId },
     });

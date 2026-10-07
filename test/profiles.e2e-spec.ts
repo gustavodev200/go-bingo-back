@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
-import { DAILY_COINS, WELCOME_COINS, type Profile } from '../src/contracts';
+import {
+  DAILY_COINS,
+  profileStatsSchema,
+  WELCOME_COINS,
+  type Profile,
+} from '../src/contracts';
 import { createTestApp, TestApp } from './support/app';
+import { makeRoom, makeUser } from './support/factories';
 
 describe('/me', () => {
   let t: TestApp;
@@ -73,4 +79,75 @@ describe('/me', () => {
       expect(res.status).toBe(400);
     },
   );
+});
+
+describe('/me/stats', () => {
+  let t: TestApp;
+  beforeAll(async () => (t = await createTestApp()));
+  afterAll(() => t.app.close());
+  beforeEach(() => t.resetDb());
+
+  it('returns games, wins, points, rank and the coin history', async () => {
+    const me = await makeUser(t, 'Ana');
+    const other = await makeUser(t, 'Bia');
+    await t.prisma.profile.update({
+      where: { id: me.id },
+      data: { gamesPlayed: 2, points: 20 },
+    });
+    await t.prisma.profile.update({
+      where: { id: other.id },
+      data: { gamesPlayed: 1, points: 40 },
+    });
+    const room = await makeRoom(t, me.id);
+    await t.prisma.game.create({
+      data: { roomId: room.id, status: 'FINISHED', winnerId: me.id },
+    });
+    await t.prisma.game.create({
+      data: { roomId: room.id, status: 'FINISHED', winnerId: other.id },
+    });
+    await t.prisma.coinTransaction.createMany({
+      data: [
+        {
+          userId: me.id,
+          amount: 1000,
+          reason: 'WELCOME',
+          createdAt: new Date('2026-10-01T00:00:00Z'),
+        },
+        {
+          userId: me.id,
+          amount: -5,
+          reason: 'CARD',
+          createdAt: new Date('2026-10-02T00:00:00Z'),
+        },
+        { userId: other.id, amount: 200, reason: 'WIN' },
+      ],
+    });
+
+    const res = await request(t.url)
+      .get('/me/stats')
+      .set('Authorization', `Bearer ${me.token}`)
+      .expect(200);
+
+    const body = profileStatsSchema.parse(res.body);
+    expect(body).toMatchObject({
+      gamesPlayed: 2,
+      wins: 1,
+      points: 20,
+      rank: 2,
+    });
+    expect(body.coinHistory.map((c) => c.reason)).toEqual(['CARD', 'WELCOME']);
+  });
+
+  it('guests have no rank', async () => {
+    const guest = await makeUser(t, 'Convidado', { isAnonymous: true });
+    const res = await request(t.url)
+      .get('/me/stats')
+      .set('Authorization', `Bearer ${guest.token}`)
+      .expect(200);
+    expect(profileStatsSchema.parse(res.body).rank).toBeNull();
+  });
+
+  it('requires a token', async () => {
+    await request(t.url).get('/me/stats').expect(401);
+  });
 });
