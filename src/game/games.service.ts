@@ -193,7 +193,6 @@ export class GamesService {
         'Bingo inválido: ainda faltam números',
       );
 
-    const pointsAwarded = user.isAnonymous ? 0 : WIN_POINTS;
     const coinsAwarded = WIN_COINS[room.winPattern];
     const winner = await this.prisma.$transaction(async (tx) => {
       const won = await tx.game.updateMany({
@@ -206,6 +205,20 @@ export class GamesService {
         where: { id: game.roomId },
         data: { status: 'WAITING' },
       });
+      const losers = await tx.card.findMany({
+        where: { gameId: game.id, userId: { not: user.id } },
+        select: { userId: true },
+      });
+      const loserIds = losers.map((c) => c.userId);
+      // Ranking só pontua vitória sobre outro jogador logado: contra convidados (ex.: a própria
+      // pessoa numa aba anônima, que nunca pede bingo) daria para inflar pontos à vontade.
+      const loggedOpponents = user.isAnonymous
+        ? 0
+        : await tx.profile.count({
+            where: { id: { in: loserIds }, isGuest: false },
+          });
+      const pointsAwarded =
+        loggedOpponents > 0 ? WIN_POINTS[room.winPattern] : 0;
       const profile = await tx.profile.update({
         where: { id: user.id },
         data: pointsAwarded > 0 ? { points: { increment: pointsAwarded } } : {},
@@ -213,17 +226,7 @@ export class GamesService {
       // Moedas: vencedor ganha; todo mundo que tinha cartela nesta partida perde (até zerar),
       // inclusive quem saiu no meio — sair não livra da perda.
       await credit(tx, user.id, coinsAwarded, 'WIN', game.id);
-      const losers = await tx.card.findMany({
-        where: { gameId: game.id, userId: { not: user.id } },
-        select: { userId: true },
-      });
-      await chargeUpTo(
-        tx,
-        losers.map((c) => c.userId),
-        LOSS_COINS,
-        'LOSS',
-        game.id,
-      );
+      await chargeUpTo(tx, loserIds, LOSS_COINS, 'LOSS', game.id);
       return {
         userId: user.id,
         nickname: profile.nickname ?? 'Jogador',

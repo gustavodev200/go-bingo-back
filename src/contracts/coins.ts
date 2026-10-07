@@ -1,7 +1,7 @@
 import type { WinPattern } from './bingo';
 
 /** Economia de moedas (cash do jogo). Saldo nunca fica negativo. Convidados participam igual. */
-export const WELCOME_COINS = 100;
+export const WELCOME_COINS = 1000;
 export const DAILY_COINS = 50;
 export const CARD_COST = 5;
 /** Prêmio do vencedor por modo da sala. */

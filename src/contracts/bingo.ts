@@ -5,7 +5,6 @@ export const MAX_NUMBER = 75;
 export const FREE_CELL = 0;
 /** Grade coluna-major: index = col * 5 + row. Centro = col 2, row 2. */
 export const FREE_INDEX = 12;
-export const WIN_POINTS = 20;
 export const MAX_CARD_REGENS = 5;
 export const RECONNECT_GRACE_MS = 60_000;
 /** Padrão do intervalo entre bolas; o servidor pode mudar via env DEFAULT_DRAW_INTERVAL_MS e o host ao criar a sala. */
@@ -27,6 +26,11 @@ export function columnRange(col: number): [number, number] {
 export const WIN_PATTERNS = ['FULL_CARD', 'LINE'] as const;
 export type WinPattern = (typeof WIN_PATTERNS)[number];
 export const DEFAULT_WIN_PATTERN: WinPattern = 'FULL_CARD';
+/** Pontos de ranking do vencedor logado, por modo (quina é mais fácil, vale menos). */
+export const WIN_POINTS: Record<WinPattern, number> = {
+  FULL_CARD: 20,
+  LINE: 10,
+};
 export const WIN_PATTERN_LABELS: Record<WinPattern, string> = {
   FULL_CARD: 'Cartela cheia',
   LINE: 'Quina',

@@ -52,6 +52,8 @@ function makePrisma() {
     profile: {
       updateMany: jest.fn(),
       update: jest.fn(),
+      // adversários logados na partida (pontos de ranking)
+      count: jest.fn().mockResolvedValue(0),
     },
     draw: {
       findUnique: jest.fn(),
@@ -630,9 +632,11 @@ describe('GamesService.claim', () => {
     });
   });
 
-  it('awards points to a registered winner and reopens the room', async () => {
+  it('awards points to a registered winner who beat another registered player and reopens the room', async () => {
     const prisma = makePrisma();
     setupActiveCard(prisma);
+    prisma.card.findMany.mockResolvedValue([{ userId: 'u2' }]);
+    prisma.profile.count.mockResolvedValue(1);
     prisma.card.findUnique.mockResolvedValue({
       id: 'c1',
       grid: [1, 2],
@@ -654,18 +658,51 @@ describe('GamesService.claim', () => {
       winner: {
         userId: 'u1',
         nickname: 'Fulano',
-        pointsAwarded: WIN_POINTS,
+        pointsAwarded: WIN_POINTS.FULL_CARD,
         coinsAwarded: WIN_COINS.FULL_CARD,
         grid: [1, 2],
       },
     });
     expect(prisma.profile.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
-      data: { points: { increment: WIN_POINTS } },
+      data: { points: { increment: WIN_POINTS.FULL_CARD } },
+    });
+    expect(prisma.profile.count).toHaveBeenCalledWith({
+      where: { id: { in: ['u2'] }, isGuest: false },
     });
     expect(prisma.room.update).toHaveBeenCalledWith({
       where: { id: 'r1' },
       data: { status: 'WAITING' },
+    });
+  });
+
+  it('awards zero points to a registered winner when every opponent is a guest (no ranking farming)', async () => {
+    const prisma = makePrisma();
+    setupActiveCard(prisma);
+    prisma.card.findUnique.mockResolvedValue({
+      id: 'c1',
+      grid: [1, 2],
+      marked: [],
+    });
+    prisma.card.findMany.mockResolvedValue([{ userId: 'guest' }]);
+    prisma.profile.count.mockResolvedValue(0);
+    prisma.draw.findMany.mockResolvedValue([{ number: 1 }, { number: 2 }]);
+    prisma.game.updateMany.mockResolvedValue({ count: 1 });
+    prisma.profile.update.mockResolvedValue({ nickname: 'Fulano' });
+    const service = new GamesService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+
+    const result = await service.claim('ABC123', {
+      id: 'u1',
+      isAnonymous: false,
+    });
+
+    expect(result.winner.pointsAwarded).toBe(0);
+    expect(prisma.profile.update).toHaveBeenCalledWith({
+      where: { id: 'u1' },
+      data: {},
     });
   });
 
@@ -785,10 +822,25 @@ describe('GamesService.claim in Quina (LINE) rooms', () => {
     });
 
     expect(result.winner.coinsAwarded).toBe(WIN_COINS.LINE);
+    expect(result.winner.pointsAwarded).toBe(0); // sem adversário logado
     expect(prisma.profile.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
       data: { coins: { increment: WIN_COINS.LINE } },
     });
+  });
+
+  it('a Quina win over a registered player is worth fewer points than a full card', async () => {
+    const { prisma, service } = setup([1, 2, 3, 4, 5]);
+    prisma.card.findMany.mockResolvedValue([{ userId: 'u2' }]);
+    prisma.profile.count.mockResolvedValue(1);
+
+    const result = await service.claim('ABC123', {
+      id: 'u1',
+      isAnonymous: false,
+    });
+
+    expect(result.winner.pointsAwarded).toBe(WIN_POINTS.LINE);
+    expect(WIN_POINTS.LINE).toBeLessThan(WIN_POINTS.FULL_CARD);
   });
 
   it('accepts a full column', async () => {
