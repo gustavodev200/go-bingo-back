@@ -26,7 +26,7 @@ Cobertura mínima: 80% (statements/branches/functions/lines), conforme a constit
 - Cron diário às 04:00 UTC (`GuestCleanupService.cleanup()`).
 - Regra de 30 dias: apaga `auth.users` anônimos sem login/refresh de sessão há 30 dias e, em seguida, os `Profile` de convidado órfãos.
 - Não roda quando o schema `auth` não existe (ex.: Postgres local do docker-compose).
-- Pendente: as colunas de `auth.sessions` (incluindo `refreshed_at`) ainda precisam ser verificadas contra um projeto Supabase real.
+- Pendente: as colunas de `auth.sessions` (incluindo `refreshed_at`) ainda precisam ser verificadas contra um projeto Supabase real. No deploy, a role do Prisma precisa ser dona das tabelas ou ter `BYPASSRLS` (RLS ligado sem policies mostra tabelas vazias para outras roles) e ter `DELETE` em `auth.users`; sem esse `DELETE` a limpeza falha com segurança (nada é apagado, erro vai ao Sentry) mas nunca limpa.
 
 ### RLS
 

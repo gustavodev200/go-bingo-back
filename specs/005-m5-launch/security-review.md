@@ -180,6 +180,8 @@ Nenhum destes foi aceito como risco por este agente; cada um precisa de decisão
 | L2 — HIGH do `npm audit` no CLI do Prisma | LOW | Aceitar até sair patch 7.x, com reavaliação a cada release; não fazer downgrade forçado. |
 | I1 — allowlist de `alg` no `jwtVerify` | INFO | Aplicar `['ES256','RS256']` quando o projeto de produção existir e o alg das chaves for confirmado. |
 | Checagens de produção (PostgREST, XFF do Fly, eventos do Sentry) | — | Repetir no primeiro deploy; não validadas aqui. |
+| Checagem de produção — role do Prisma no Supabase e RLS | — | No primeiro deploy, confirmar que a role usada pelo Prisma é dona das tabelas ou tem `BYPASSRLS`: com RLS ligado e sem policies, qualquer outra role enxerga tabelas vazias. |
+| Checagem de produção — `DELETE` em `auth.users` | — | No primeiro deploy, confirmar que essa mesma role tem `DELETE` em `auth.users`; sem isso a limpeza de convidados falha com segurança (nada é apagado, o erro vai para o Sentry), mas nunca limpa. |
 
 ## Riscos aceitos explicitamente
 
