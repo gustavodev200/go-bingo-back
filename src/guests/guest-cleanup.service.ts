@@ -38,7 +38,7 @@ export class GuestCleanupService {
         AND COALESCE(u.last_sign_in_at, u.created_at) < ${cutoff}
         AND NOT EXISTS (
           SELECT 1 FROM auth.sessions s
-          WHERE s.user_id = u.id AND COALESCE(s.refreshed_at, s.updated_at, s.created_at) >= ${cutoff}
+          WHERE s.user_id = u.id AND GREATEST(s.refreshed_at, s.updated_at, s.created_at) >= ${cutoff}
         )`;
     // Perfis de convidado cujo usuário não existe mais (RoomMember cai em cascata).
     const profiles = await this.prisma.$executeRaw`

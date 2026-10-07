@@ -10,6 +10,7 @@ const ids = {
   stale: '00000000-0000-4000-8000-000000000001',
   activeSession: '00000000-0000-4000-8000-000000000002',
   upgraded: '00000000-0000-4000-8000-000000000003',
+  updatedRecently: '00000000-0000-4000-8000-000000000004',
 };
 
 describe('GuestCleanupService (e2e)', () => {
@@ -60,5 +61,20 @@ describe('GuestCleanupService (e2e)', () => {
       ids.activeSession,
       ids.upgraded,
     ]);
+  });
+
+  it('sessÃ£o com refreshed_at antigo mas updated_at recente conta como ativa', async () => {
+    await t.resetDb();
+    await t.prisma.$executeRawUnsafe(`
+      INSERT INTO auth.users (id, is_anonymous, last_sign_in_at) VALUES ('${ids.updatedRecently}', true, ${OLD});
+      INSERT INTO auth.sessions (user_id, refreshed_at, updated_at) VALUES ('${ids.updatedRecently}', ${OLD}, now());`);
+    await t.prisma.profile.create({
+      data: { id: ids.updatedRecently, isGuest: true },
+    });
+
+    const result = await t.app.get(GuestCleanupService).cleanup();
+
+    expect(result).toEqual({ authUsers: 0, profiles: 0 });
+    expect(await t.prisma.profile.count()).toBe(1);
   });
 });
