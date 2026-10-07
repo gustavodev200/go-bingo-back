@@ -1,3 +1,7 @@
+// ATENÇÃO: esta suíte cria um schema `auth` FALSO (users/sessions) e o remove no
+// fim. Só rode contra Postgres local/CI. Se `auth.users` já existir (ex.: um
+// Supabase real com GoTrue), a suíte aborta sem tocar em nada; e o teardown só
+// derruba o schema se ESTA execução o criou (nunca faz limpeza "por garantia").
 import { createTestApp, type TestApp } from './support/app';
 import { GuestCleanupService } from '../src/guests/guest-cleanup.service';
 
@@ -10,16 +14,28 @@ const ids = {
 
 describe('GuestCleanupService (e2e)', () => {
   let t: TestApp;
+  let createdAuth = false;
   beforeAll(async () => {
     t = await createTestApp();
+    const [{ exists }] = await t.prisma.$queryRaw<
+      { exists: boolean }[]
+    >`SELECT to_regclass('auth.users') IS NOT NULL AS exists`;
+    if (exists) {
+      throw new Error(
+        'auth.users já existe: esta suíte usa um schema auth falso e só deve rodar em Postgres local/CI (nunca em Supabase real).',
+      );
+    }
     await t.prisma.$executeRawUnsafe(`
       CREATE SCHEMA IF NOT EXISTS auth;
       CREATE TABLE auth.users (id uuid PRIMARY KEY, is_anonymous boolean, last_sign_in_at timestamptz, created_at timestamptz DEFAULT now());
       CREATE TABLE auth.sessions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, created_at timestamptz DEFAULT now(), updated_at timestamptz, refreshed_at timestamp);`);
+    createdAuth = true;
   });
   afterAll(async () => {
-    await t.prisma.$executeRawUnsafe('DROP SCHEMA auth CASCADE');
-    await t.app.close();
+    if (createdAuth) {
+      await t.prisma.$executeRawUnsafe('DROP SCHEMA auth CASCADE');
+    }
+    if (t) await t.app.close();
   });
 
   it('apaga só convidado antigo e sem sessão recente', async () => {
