@@ -95,7 +95,7 @@ describe('MembershipService.join', () => {
     expect(prisma.roomMember.create).not.toHaveBeenCalled();
   });
 
-  it('rejects joining a room whose game already started', async () => {
+  it('joins a room whose game already started as a spectator (free slot, no card)', async () => {
     const prisma = makePrisma();
     prisma.profile.findUnique.mockResolvedValue({ nickname: 'Ana' });
     prisma.room.findUnique.mockResolvedValue({
@@ -103,15 +103,17 @@ describe('MembershipService.join', () => {
       status: 'IN_GAME',
       maxPlayers: 10,
     });
-    prisma.roomMember.findMany.mockResolvedValue([]);
+    prisma.roomMember.findMany.mockResolvedValue([{ userId: 'h', slot: 0 }]);
     const service = new MembershipService(
       prisma as unknown as PrismaService,
       random,
     );
 
-    await expect(service.join('ABC123', 'u1')).rejects.toMatchObject({
-      code: 'GAME_IN_PROGRESS',
+    await expect(service.join('ABC123', 'u1')).resolves.toBeUndefined();
+    expect(prisma.roomMember.create).toHaveBeenCalledWith({
+      data: { roomId: 'r1', userId: 'u1', slot: 1 },
     });
+    expect(prisma.card.create).not.toHaveBeenCalled();
   });
 
   it('rejects joining a full room', async () => {

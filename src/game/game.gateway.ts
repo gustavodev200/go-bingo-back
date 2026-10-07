@@ -218,7 +218,7 @@ export class GameGateway
       body,
       async (user, { userId }) => {
         const code = this.requireRoom(socket);
-        await this.membership.kick(code, user.id, userId);
+        const result = await this.membership.kick(code, user.id, userId);
         this.presence.remove(code, userId);
         this.publisher.toRoom(code, ServerEvents.MEMBER_LEFT, {
           userId,
@@ -226,6 +226,7 @@ export class GameGateway
         });
         this.publisher.removeUserFromRoom(userId, code);
         this.publisher.publicRoomsChanged();
+        if (result.removed && !result.closed) await this.endIfAbandoned(code);
         return null;
       },
     );
@@ -382,6 +383,19 @@ export class GameGateway
       });
       this.presence.clearRoom(code);
     }
+    this.publisher.publicRoomsChanged();
+    if (!result.closed) await this.endIfAbandoned(code);
+  }
+
+  /** Sem ninguém com cartela (só espectadores), a partida acaba agora em vez de sortear até a 75ª bola. */
+  private async endIfAbandoned(code: string): Promise<void> {
+    const gameId = await this.games.endIfNoPlayers(code);
+    if (!gameId) return;
+    this.runner.stop(gameId);
+    this.logger.log({ event: 'game_abandoned', roomCode: code, gameId });
+    this.publisher.toRoom(code, ServerEvents.GAME_ENDED, {
+      reason: 'no_players',
+    });
     this.publisher.publicRoomsChanged();
   }
 

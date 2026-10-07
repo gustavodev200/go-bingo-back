@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
-import type { Profile } from '../src/contracts';
+import { DAILY_COINS, WELCOME_COINS, type Profile } from '../src/contracts';
 import { createTestApp, TestApp } from './support/app';
 
 describe('/me', () => {
@@ -24,13 +24,13 @@ describe('/me', () => {
         `Bearer ${await t.auth.sign(id, { isAnonymous: true })}`,
       )
       .expect(200);
-    // primeiro acesso: boas-vindas (100) + bônus do dia (50)
+    // primeiro acesso: boas-vindas + bônus do dia
     expect(res.body).toEqual({
       id,
       nickname: null,
       isGuest: true,
       points: 0,
-      coins: 150,
+      coins: WELCOME_COINS + DAILY_COINS,
       dailyBonus: 50,
     });
   });

@@ -41,6 +41,7 @@ function makePrisma() {
       findUnique: jest.fn(),
       update: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn(),
     },
     coinTransaction: { create: jest.fn(), createMany: jest.fn() },
     // chargeUpTo (cobrança até zerar) devolve quanto tirou de cada um
@@ -934,5 +935,90 @@ describe('GamesService read helpers', () => {
     await expect(service.findInProgress()).resolves.toEqual([
       { id: 'g1', roomCode: 'ABC123', drawIntervalMs: 5_000 },
     ]);
+  });
+});
+
+describe('GamesService.endIfNoPlayers', () => {
+  const room = { id: 'r1', status: 'IN_GAME', members: [{ userId: 'spec' }] };
+
+  it('does nothing when the room is not in a game', async () => {
+    const prisma = makePrisma();
+    prisma.room.findUnique.mockResolvedValue({ ...room, status: 'WAITING' });
+    const service = new GamesService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+
+    await expect(service.endIfNoPlayers('ABC123')).resolves.toBeNull();
+    expect(prisma.game.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the room is gone or has no running game', async () => {
+    const prisma = makePrisma();
+    prisma.room.findUnique.mockResolvedValueOnce(null);
+    const service = new GamesService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+    await expect(service.endIfNoPlayers('ABC123')).resolves.toBeNull();
+
+    prisma.room.findUnique.mockResolvedValueOnce(room);
+    prisma.game.findFirst.mockResolvedValueOnce(null);
+    await expect(service.endIfNoPlayers('ABC123')).resolves.toBeNull();
+    expect(prisma.game.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps the game while a current member still holds one of its cards', async () => {
+    const prisma = makePrisma();
+    prisma.room.findUnique.mockResolvedValue(room);
+    prisma.game.findFirst.mockResolvedValue({ id: 'g1' });
+    prisma.card.count.mockResolvedValue(1);
+    const service = new GamesService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+
+    await expect(service.endIfNoPlayers('ABC123')).resolves.toBeNull();
+    expect(prisma.card.count).toHaveBeenCalledWith({
+      where: { gameId: 'g1', userId: { in: ['spec'] } },
+    });
+    expect(prisma.game.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('finishes the game and reopens the room when only spectators are left', async () => {
+    const prisma = makePrisma();
+    prisma.room.findUnique.mockResolvedValue(room);
+    prisma.game.findFirst.mockResolvedValue({ id: 'g1' });
+    prisma.card.count.mockResolvedValue(0);
+    prisma.game.updateMany.mockResolvedValue({ count: 1 });
+    const service = new GamesService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+
+    await expect(service.endIfNoPlayers('ABC123')).resolves.toBe('g1');
+    expect(prisma.game.updateMany).toHaveBeenCalledWith({
+      where: { id: 'g1', status: 'IN_PROGRESS' },
+      data: { status: 'FINISHED', finishedAt: expect.any(Date) as Date },
+    });
+    expect(prisma.room.update).toHaveBeenCalledWith({
+      where: { id: 'r1' },
+      data: { status: 'WAITING' },
+    });
+  });
+
+  it('backs off when a claim or tick already finished the game', async () => {
+    const prisma = makePrisma();
+    prisma.room.findUnique.mockResolvedValue(room);
+    prisma.game.findFirst.mockResolvedValue({ id: 'g1' });
+    prisma.card.count.mockResolvedValue(0);
+    prisma.game.updateMany.mockResolvedValue({ count: 0 });
+    const service = new GamesService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+
+    await expect(service.endIfNoPlayers('ABC123')).resolves.toBeNull();
+    expect(prisma.room.update).not.toHaveBeenCalled();
   });
 });

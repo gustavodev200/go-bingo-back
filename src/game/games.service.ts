@@ -257,6 +257,42 @@ export class GamesService {
     );
   }
 
+  /**
+   * Encerra a partida sem vencedor quando nenhum membro atual tem cartela dela
+   * (só sobraram espectadores). Devolve o id do jogo encerrado, ou null.
+   */
+  endIfNoPlayers(code: string): Promise<string | null> {
+    return this.prisma.$transaction(async (tx) => {
+      const room = await tx.room.findUnique({
+        where: { code },
+        include: { members: { select: { userId: true } } },
+      });
+      if (!room || room.status !== 'IN_GAME') return null;
+      const game = await tx.game.findFirst({
+        where: { roomId: room.id, status: 'IN_PROGRESS' },
+      });
+      if (!game) return null;
+      const players = await tx.card.count({
+        where: {
+          gameId: game.id,
+          userId: { in: room.members.map((m) => m.userId) },
+        },
+      });
+      if (players > 0) return null;
+      // Condicional: não sobrescreve um bingo ou fim por exaustão decidido em paralelo.
+      const ended = await tx.game.updateMany({
+        where: { id: game.id, status: 'IN_PROGRESS' },
+        data: { status: 'FINISHED', finishedAt: new Date() },
+      });
+      if (ended.count !== 1) return null;
+      await tx.room.update({
+        where: { id: room.id },
+        data: { status: 'WAITING' },
+      });
+      return game.id;
+    });
+  }
+
   async drawnNumbers(gameId: string): Promise<number[]> {
     const draws = await this.prisma.draw.findMany({
       where: { gameId },

@@ -55,6 +55,9 @@ export const memberLeftReasonSchema = z.enum([
 export type MemberLeftReason = z.infer<typeof memberLeftReasonSchema>;
 export const roomClosedReasonSchema = z.enum(['host_cancelled', 'empty']);
 export type RoomClosedReason = z.infer<typeof roomClosedReasonSchema>;
+/** exhausted = as 75 bolas saíram sem bingo; no_players = só sobraram espectadores na sala. */
+export const gameEndedReasonSchema = z.enum(['exhausted', 'no_players']);
+export type GameEndedReason = z.infer<typeof gameEndedReasonSchema>;
 
 export const numberDrawnSchema = z.object({
   seq: z.number().int(),
@@ -89,7 +92,7 @@ export interface ServerEventPayloads {
   'game:number_drawn': NumberDrawn;
   'game:progress': { remaining: Record<string, number> };
   'game:won': Winner;
-  'game:ended': { reason: 'exhausted' };
+  'game:ended': { reason: GameEndedReason };
 }
 export type ServerEventName = keyof ServerEventPayloads;
 

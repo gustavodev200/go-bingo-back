@@ -418,4 +418,57 @@ describe('GamesService', () => {
       },
     ]);
   });
+
+  describe('spectators (joined mid-game)', () => {
+    async function running() {
+      const { host, p1, room } = await lobby();
+      await membership.generateCard(room.code, host.id);
+      await membership.generateCard(room.code, p1.id);
+      const { gameId } = await games.start(room.code, host.id);
+      const spectator = await makeUser(t, 'Bia');
+      await membership.join(room.code, spectator.id);
+      return { host, p1, room, gameId, spectator };
+    }
+
+    it('watch without a card: cannot mark or claim, and are not counted in progress', async () => {
+      const { room, gameId, spectator } = await running();
+      await games.drawNext(gameId);
+
+      await expect(
+        games.mark(room.code, spectator.id, 0),
+      ).rejects.toMatchObject({ code: 'NOT_IN_ROOM' });
+      await expect(
+        games.claim(room.code, { id: spectator.id, isAnonymous: false }),
+      ).rejects.toMatchObject({ code: 'NOT_IN_ROOM' });
+      expect(Object.keys(await games.progress(gameId))).not.toContain(
+        spectator.id,
+      );
+    });
+
+    it('a game with players left keeps running; endIfNoPlayers is a no-op', async () => {
+      const { room } = await running();
+      await expect(games.endIfNoPlayers(room.code)).resolves.toBeNull();
+    });
+
+    it('when every card holder leaves, the game ends and the spectator plays the next round', async () => {
+      const { host, p1, room, gameId, spectator } = await running();
+      await membership.leave(room.code, host.id);
+      await membership.leave(room.code, p1.id);
+
+      await expect(games.endIfNoPlayers(room.code)).resolves.toBe(gameId);
+      const game = await t.prisma.game.findUniqueOrThrow({
+        where: { id: gameId },
+      });
+      expect(game.status).toBe('FINISHED');
+      expect(game.winnerId).toBeNull();
+      expect(
+        (await t.prisma.room.findUniqueOrThrow({ where: { id: room.id } }))
+          .status,
+      ).toBe('WAITING');
+      // a sala voltou ao lobby: o espectador agora gera cartela normalmente
+      await expect(
+        membership.generateCard(room.code, spectator.id),
+      ).resolves.toMatchObject({ marked: [] });
+    });
+  });
 });

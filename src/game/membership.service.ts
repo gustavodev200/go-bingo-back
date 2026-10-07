@@ -41,8 +41,7 @@ export class MembershipService {
         select: { userId: true, slot: true },
       });
       if (members.some((m) => m.userId === userId)) return;
-      if (room.status === 'IN_GAME')
-        throw new DomainError('GAME_IN_PROGRESS', 'Partida em andamento');
+      // Sala em jogo também aceita: quem chega assiste (sem cartela) e joga a próxima rodada.
       const slot = firstFreeSlot(
         new Set(members.map((m) => m.slot)),
         room.maxPlayers,

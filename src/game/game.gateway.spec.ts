@@ -28,7 +28,11 @@ function makeDeps() {
     generateCard: jest.fn(),
     assertHost: jest.fn(),
   };
-  const games = { mark: jest.fn(), claim: jest.fn() };
+  const games = {
+    mark: jest.fn(),
+    claim: jest.fn(),
+    endIfNoPlayers: jest.fn().mockResolvedValue(null),
+  };
   const snapshots = { build: jest.fn() };
   const presence = {
     setExpiryHandler: jest.fn<void, [(code: string, userId: string) => void]>(),
@@ -550,7 +554,7 @@ describe('GameGateway.onLeave', () => {
 describe('GameGateway.onKick', () => {
   it('kicks the target and tells everyone', async () => {
     const { gateway, membership, presence, publisher } = makeDeps();
-    membership.kick.mockResolvedValue(undefined);
+    membership.kick.mockResolvedValue({ removed: true, closed: false });
     const { socket } = makeSocket(user);
     socket.data.roomCode = 'ABC123';
     socket.rooms.add(roomChannel('ABC123'));
@@ -794,5 +798,69 @@ describe('GameGateway.onReplay', () => {
 describe('ClientEvents wiring sanity', () => {
   it('uses the documented event name for room:join', () => {
     expect(ClientEvents.ROOM_JOIN).toBe('room:join');
+  });
+});
+
+describe('GameGateway: game nobody is playing anymore', () => {
+  function inRoom() {
+    const { socket } = makeSocket(user);
+    socket.data.roomCode = 'ABC123';
+    socket.rooms.add(roomChannel('ABC123'));
+    return socket;
+  }
+
+  it('ends the game when the last card holder leaves (only spectators left)', async () => {
+    const { gateway, membership, games, runner, publisher } = makeDeps();
+    membership.leave.mockResolvedValue({ removed: true, closed: false });
+    games.endIfNoPlayers.mockResolvedValue('g1');
+
+    await gateway.onLeave(asGatewaySocket(inRoom()), {});
+
+    expect(games.endIfNoPlayers).toHaveBeenCalledWith('ABC123');
+    expect(runner.stop).toHaveBeenCalledWith('g1');
+    expect(publisher.toRoom).toHaveBeenCalledWith(
+      'ABC123',
+      ServerEvents.GAME_ENDED,
+      { reason: 'no_players' },
+    );
+  });
+
+  it('keeps the game going while someone still plays', async () => {
+    const { gateway, membership, games, runner, publisher } = makeDeps();
+    membership.leave.mockResolvedValue({ removed: true, closed: false });
+
+    await gateway.onLeave(asGatewaySocket(inRoom()), {});
+
+    expect(games.endIfNoPlayers).toHaveBeenCalledWith('ABC123');
+    expect(runner.stop).not.toHaveBeenCalled();
+    expect(publisher.toRoom).not.toHaveBeenCalledWith(
+      'ABC123',
+      ServerEvents.GAME_ENDED,
+      expect.anything(),
+    );
+  });
+
+  it('skips the check when the room closed (nobody left to tell)', async () => {
+    const { gateway, membership, games } = makeDeps();
+    membership.leave.mockResolvedValue({ removed: true, closed: true });
+
+    await gateway.onLeave(asGatewaySocket(inRoom()), {});
+
+    expect(games.endIfNoPlayers).not.toHaveBeenCalled();
+  });
+
+  it('ends the game when the host kicks the last card holder', async () => {
+    const { gateway, membership, games, runner, publisher } = makeDeps();
+    membership.kick.mockResolvedValue({ removed: true, closed: false });
+    games.endIfNoPlayers.mockResolvedValue('g1');
+
+    await gateway.onKick(asGatewaySocket(inRoom()), { userId: randomUUID() });
+
+    expect(runner.stop).toHaveBeenCalledWith('g1');
+    expect(publisher.toRoom).toHaveBeenCalledWith(
+      'ABC123',
+      ServerEvents.GAME_ENDED,
+      { reason: 'no_players' },
+    );
   });
 });

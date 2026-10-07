@@ -39,7 +39,7 @@ describe('MembershipService', () => {
     });
   });
 
-  it('rejects unknown, full and in-game rooms', async () => {
+  it('rejects unknown and full rooms; in-game rooms take spectators', async () => {
     const host = await makeUser(t, 'Host');
     const p1 = await makeUser(t, 'Ana');
     await expect(svc.join('ZZZZZZ', p1.id)).rejects.toMatchObject({
@@ -56,9 +56,13 @@ describe('MembershipService', () => {
       where: { id: busy.id },
       data: { status: 'IN_GAME' },
     });
-    await expect(svc.join(busy.code, p1.id)).rejects.toMatchObject({
-      code: 'GAME_IN_PROGRESS',
-    });
+    await expect(svc.join(busy.code, p1.id)).resolves.toBeUndefined();
+    expect(
+      await t.prisma.roomMember.count({ where: { roomId: busy.id } }),
+    ).toBe(2);
+    expect(
+      await t.prisma.card.count({ where: { roomId: busy.id, userId: p1.id } }),
+    ).toBe(0);
   });
 
   it('never exceeds capacity under concurrent joins', async () => {
