@@ -63,7 +63,7 @@ describe('GuestCleanupService (e2e)', () => {
     ]);
   });
 
-  it('sessÃ£o com refreshed_at antigo mas updated_at recente conta como ativa', async () => {
+  it('session with old refreshed_at but recent updated_at counts as active', async () => {
     await t.resetDb();
     await t.prisma.$executeRawUnsafe(`
       INSERT INTO auth.users (id, is_anonymous, last_sign_in_at) VALUES ('${ids.updatedRecently}', true, ${OLD});
