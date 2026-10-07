@@ -17,11 +17,17 @@ function nextCode(): string {
 export async function makeUser(
   t: TestApp,
   nickname: string | null = 'Jogador',
-  opts: { isAnonymous?: boolean } = {},
+  opts: { isAnonymous?: boolean; coins?: number } = {},
 ) {
   const id = randomUUID();
+  // Saldo folgado por padrão: testes que não são sobre moedas não esbarram no custo da cartela.
   await t.prisma.profile.create({
-    data: { id, nickname, isGuest: opts.isAnonymous ?? false },
+    data: {
+      id,
+      nickname,
+      isGuest: opts.isAnonymous ?? false,
+      coins: opts.coins ?? 1_000,
+    },
   });
   return {
     id,

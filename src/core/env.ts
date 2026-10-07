@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  DEFAULT_DRAW_INTERVAL_MS,
+  MAX_DRAW_INTERVAL_MS,
+  MIN_DRAW_INTERVAL_MS,
+} from '../contracts';
 
 // Templates de secrets costumam deixar a variável vazia; vazio = ausente.
 const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
@@ -21,6 +26,13 @@ const envSchema = z.object({
   // é truthy — qualquer string não vazia é). z.stringbool() interpreta o
   // literal "true"/"false" (e variantes como "1"/"0") corretamente.
   TRUST_PROXY: z.stringbool().default(false),
+  // Tempo padrão entre bolas das salas novas (o host ainda pode escolher outro ao criar).
+  DEFAULT_DRAW_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(MIN_DRAW_INTERVAL_MS)
+    .max(MAX_DRAW_INTERVAL_MS)
+    .default(DEFAULT_DRAW_INTERVAL_MS),
 });
 
 export type Env = z.infer<typeof envSchema>;

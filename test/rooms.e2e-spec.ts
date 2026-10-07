@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
-import type { PublicRoom } from '../src/contracts';
+import { DEFAULT_DRAW_INTERVAL_MS, type PublicRoom } from '../src/contracts';
 import { RANDOM_INT } from '../src/core/random';
 import { createTestApp, TestApp } from './support/app';
 
@@ -76,6 +76,28 @@ describe('/rooms', () => {
     });
     expect(room.members).toEqual([
       expect.objectContaining({ slot: 0, userId: room.hostId }),
+    ]);
+  });
+
+  it('uses the server default draw interval, or the one the host picked within limits', async () => {
+    const token = await userWithNickname();
+    const send = (body: object) =>
+      request(t.url)
+        .post('/rooms')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Amigos', maxPlayers: 10, isPublic: true, ...body });
+
+    await send({}).expect(201);
+    await send({ drawIntervalMs: 12_000 }).expect(201);
+    const tooFast = await send({ drawIntervalMs: 1_000 });
+    expect(tooFast.status).toBe(400);
+
+    const rooms = await t.prisma.room.findMany({
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(rooms.map((r) => r.drawIntervalMs)).toEqual([
+      DEFAULT_DRAW_INTERVAL_MS,
+      12_000,
     ]);
   });
 

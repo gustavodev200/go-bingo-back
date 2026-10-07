@@ -1,9 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { chargeUpTo, credit } from '../coins/ledger';
 import {
+  CARD_COST,
   FREE_CELL,
   FREE_INDEX,
   letterFor,
+  LOSS_COINS,
   remainingForFullCard,
+  WIN_COINS,
   WIN_POINTS,
   type NumberDrawn,
   type Winner,
@@ -81,6 +85,8 @@ export class GamesService {
             grid: generateGrid(this.random),
           })),
         });
+        // A cartela automática também custa; quem não tem saldo joga mesmo assim (não trava a partida).
+        await chargeUpTo(tx, missing, CARD_COST, 'CARD', game.id);
       }
       await tx.roomMember.updateMany({
         where: { roomId: room.id },
@@ -202,10 +208,25 @@ export class GamesService {
         where: { id: user.id },
         data: pointsAwarded > 0 ? { points: { increment: pointsAwarded } } : {},
       });
+      // Moedas: vencedor ganha; todo mundo que tinha cartela nesta partida perde (até zerar),
+      // inclusive quem saiu no meio — sair não livra da perda.
+      await credit(tx, user.id, WIN_COINS, 'WIN', game.id);
+      const losers = await tx.card.findMany({
+        where: { gameId: game.id, userId: { not: user.id } },
+        select: { userId: true },
+      });
+      await chargeUpTo(
+        tx,
+        losers.map((c) => c.userId),
+        LOSS_COINS,
+        'LOSS',
+        game.id,
+      );
       return {
         userId: user.id,
         nickname: profile.nickname ?? 'Jogador',
         pointsAwarded,
+        coinsAwarded: WIN_COINS,
         grid: card.grid,
       };
     });

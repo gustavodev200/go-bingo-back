@@ -24,17 +24,30 @@ enum WinPattern {
   FULL_CARD
 }
 
+enum CoinReason {
+  WELCOME
+  DAILY
+  CARD
+  WIN
+  LOSS
+}
+
 /// RLS ligada por migration (enable_rls); novas tabelas precisam do mesmo ALTER na migration que as cria.
 /// id = auth.users.id do Supabase (sem FK: schemas diferentes).
 model Profile {
-  id          String       @id @db.Uuid
-  nickname    String?      @db.VarChar(16)
-  isGuest     Boolean      @default(true)
-  points      Int          @default(0)
-  gamesPlayed Int          @default(0)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  memberships RoomMember[]
+  id               String            @id @db.Uuid
+  nickname         String?           @db.VarChar(16)
+  isGuest          Boolean           @default(true)
+  points           Int               @default(0)
+  gamesPlayed      Int               @default(0)
+  /// Moedas do jogo; nunca negativo (CHECK na migration).
+  coins            Int               @default(0)
+  /// Dia (America/Sao_Paulo) do último bônus diário.
+  lastDailyBonusOn DateTime?         @db.Date
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  memberships      RoomMember[]
+  coinTransactions CoinTransaction[]
 
   @@index([points(sort: Desc)])
 }
@@ -47,7 +60,7 @@ model Room {
   maxPlayers     Int
   isPublic       Boolean
   status         RoomStatus   @default(WAITING)
-  drawIntervalMs Int          @default(5000)
+  drawIntervalMs Int          @default(8000)
   winPattern     WinPattern   @default(FULL_CARD)
   createdAt      DateTime     @default(now())
   members        RoomMember[]
@@ -110,4 +123,17 @@ model Card {
 
   @@unique([gameId, userId])
   @@index([roomId, userId])
+}
+
+/// Extrato de moedas (auditoria): amount > 0 crédito, < 0 débito (valor efetivamente cobrado).
+model CoinTransaction {
+  id        String     @id @default(uuid()) @db.Uuid
+  userId    String     @db.Uuid
+  amount    Int
+  reason    CoinReason
+  gameId    String?    @db.Uuid
+  createdAt DateTime   @default(now())
+  profile   Profile    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }

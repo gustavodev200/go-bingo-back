@@ -24,7 +24,15 @@ describe('/me', () => {
         `Bearer ${await t.auth.sign(id, { isAnonymous: true })}`,
       )
       .expect(200);
-    expect(res.body).toEqual({ id, nickname: null, isGuest: true, points: 0 });
+    // primeiro acesso: boas-vindas (100) + bônus do dia (50)
+    expect(res.body).toEqual({
+      id,
+      nickname: null,
+      isGuest: true,
+      points: 0,
+      coins: 150,
+      dailyBonus: 50,
+    });
   });
 
   it('marks the profile as non-guest after the guest links Google', async () => {

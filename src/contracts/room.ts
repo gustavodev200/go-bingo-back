@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_DRAW_INTERVAL_MS, MIN_DRAW_INTERVAL_MS } from './bingo';
 
 export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -16,6 +17,13 @@ export const createRoomSchema = z.object({
     .max(24, 'Nome com no máximo 24 caracteres'),
   maxPlayers: z.union([z.literal(10), z.literal(15), z.literal(25)]),
   isPublic: z.boolean(),
+  /** Tempo entre bolas; ausente = padrão do servidor. */
+  drawIntervalMs: z
+    .number()
+    .int()
+    .min(MIN_DRAW_INTERVAL_MS)
+    .max(MAX_DRAW_INTERVAL_MS)
+    .optional(),
 });
 export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 
@@ -73,6 +81,7 @@ export const winnerSchema = z.object({
   userId: z.uuid(),
   nickname: z.string(),
   pointsAwarded: z.number().int(),
+  coinsAwarded: z.number().int(),
   grid: z.array(z.number().int()).length(25),
 });
 export type Winner = z.infer<typeof winnerSchema>;

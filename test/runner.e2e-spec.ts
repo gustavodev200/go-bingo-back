@@ -1,3 +1,4 @@
+import { DEFAULT_DRAW_INTERVAL_MS } from '../src/contracts';
 import { GameRunner } from '../src/game/game-runner.service';
 import { DRAW_TIMER, type DrawTimer } from '../src/game/draw-timer';
 import { GamesService } from '../src/game/games.service';
@@ -39,7 +40,7 @@ describe('GameRunner', () => {
     const { host, room } = await startedGame();
     await t.app.get(GameRunner).start(room.code, host.id);
     expect(scheduled).toHaveLength(1);
-    expect(scheduled[0].ms).toBe(5000);
+    expect(scheduled[0].ms).toBe(DEFAULT_DRAW_INTERVAL_MS);
   });
 
   it('tick persists a number and schedules the next one', async () => {

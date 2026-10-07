@@ -1,7 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { isNicknameAllowed, nicknameSchema, type Profile } from '../contracts';
+import { credit, saoPauloDay } from '../coins/ledger';
+import {
+  DAILY_COINS,
+  isNicknameAllowed,
+  nicknameSchema,
+  WELCOME_COINS,
+  type Profile,
+} from '../contracts';
 import type { AuthUser } from '../core/auth/jwt-verifier';
 import { DomainError } from '../core/domain-error';
+import { isUniqueViolation } from '../core/prisma-errors';
 import { PrismaService } from '../core/prisma.service';
 import type { Profile as ProfileRow } from '../generated/prisma/client';
 
@@ -9,12 +17,56 @@ import type { Profile as ProfileRow } from '../generated/prisma/client';
 export class ProfilesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Cria o perfil no primeiro acesso e mantém isGuest espelhando a claim is_anonymous. */
-  ensure(user: AuthUser): Promise<ProfileRow> {
-    return this.prisma.profile.upsert({
+  /**
+   * Cria o perfil no primeiro acesso (com as moedas de boas-vindas) e mantém isGuest
+   * espelhando a claim is_anonymous.
+   */
+  async ensure(user: AuthUser): Promise<ProfileRow> {
+    const existing = await this.prisma.profile.findUnique({
       where: { id: user.id },
-      create: { id: user.id, isGuest: user.isAnonymous },
-      update: { isGuest: user.isAnonymous },
+    });
+    if (existing) {
+      if (existing.isGuest === user.isAnonymous) return existing;
+      return this.prisma.profile.update({
+        where: { id: user.id },
+        data: { isGuest: user.isAnonymous },
+      });
+    }
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.profile.create({
+          data: { id: user.id, isGuest: user.isAnonymous },
+        });
+        await credit(tx, user.id, WELCOME_COINS, 'WELCOME');
+        return tx.profile.findUniqueOrThrow({ where: { id: user.id } });
+      });
+    } catch (error) {
+      // Duas requisições simultâneas do primeiro acesso: a outra criou primeiro.
+      if (!isUniqueViolation(error)) throw error;
+      return this.prisma.profile.findUniqueOrThrow({ where: { id: user.id } });
+    }
+  }
+
+  /**
+   * Bônus de quem entra no jogo: uma vez por dia (calendário de São Paulo).
+   * O UPDATE condicional garante um único crédito mesmo com chamadas simultâneas.
+   * Devolve quanto foi creditado agora (0 se já recebeu hoje).
+   */
+  claimDaily(userId: string, now = new Date()): Promise<number> {
+    const today = saoPauloDay(now);
+    return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.profile.updateMany({
+        where: {
+          id: userId,
+          OR: [{ lastDailyBonusOn: null }, { lastDailyBonusOn: { lt: today } }],
+        },
+        data: { coins: { increment: DAILY_COINS }, lastDailyBonusOn: today },
+      });
+      if (claimed.count !== 1) return 0;
+      await tx.coinTransaction.create({
+        data: { userId, amount: DAILY_COINS, reason: 'DAILY' },
+      });
+      return DAILY_COINS;
     });
   }
 
@@ -43,6 +95,7 @@ export class ProfilesService {
       nickname: row.nickname,
       isGuest: row.isGuest,
       points: row.points,
+      coins: row.coins,
     };
   }
 }

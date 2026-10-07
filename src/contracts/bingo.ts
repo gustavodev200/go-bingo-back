@@ -8,7 +8,10 @@ export const FREE_INDEX = 12;
 export const WIN_POINTS = 20;
 export const MAX_CARD_REGENS = 5;
 export const RECONNECT_GRACE_MS = 60_000;
-export const DEFAULT_DRAW_INTERVAL_MS = 5_000;
+/** Padrão do intervalo entre bolas; o servidor pode mudar via env DEFAULT_DRAW_INTERVAL_MS e o host ao criar a sala. */
+export const DEFAULT_DRAW_INTERVAL_MS = 8_000;
+export const MIN_DRAW_INTERVAL_MS = 4_000;
+export const MAX_DRAW_INTERVAL_MS = 20_000;
 
 export function letterFor(n: number): BingoLetter {
   if (!Number.isInteger(n) || n < 1 || n > MAX_NUMBER)

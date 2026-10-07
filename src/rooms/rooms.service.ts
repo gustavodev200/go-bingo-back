@@ -1,5 +1,10 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import type { CreateRoomInput, PublicRoom } from '../contracts';
+import {
+  DEFAULT_DRAW_INTERVAL_MS,
+  type CreateRoomInput,
+  type PublicRoom,
+} from '../contracts';
+import { ENV, type Env } from '../core/env';
 import { DomainError } from '../core/domain-error';
 import { isUniqueViolation } from '../core/prisma-errors';
 import { PrismaService } from '../core/prisma.service';
@@ -15,6 +20,9 @@ export class RoomsService {
     private readonly prisma: PrismaService,
     @Inject(RANDOM_INT) private readonly random: RandomInt,
     @Optional() private readonly presence?: PresenceService,
+    @Optional()
+    @Inject(ENV)
+    private readonly env?: Pick<Env, 'DEFAULT_DRAW_INTERVAL_MS'>,
   ) {}
 
   async create(
@@ -36,6 +44,10 @@ export class RoomsService {
         await this.prisma.room.create({
           data: {
             ...input,
+            drawIntervalMs:
+              input.drawIntervalMs ??
+              this.env?.DEFAULT_DRAW_INTERVAL_MS ??
+              DEFAULT_DRAW_INTERVAL_MS,
             code,
             hostId,
             members: { create: { userId: hostId, slot: 0 } },

@@ -1,4 +1,8 @@
-import { FREE_CELL, FREE_INDEX } from '../src/contracts';
+import {
+  DEFAULT_DRAW_INTERVAL_MS,
+  FREE_CELL,
+  FREE_INDEX,
+} from '../src/contracts';
 import { GamesService } from '../src/game/games.service';
 import { MembershipService } from '../src/game/membership.service';
 import { createTestApp, TestApp } from './support/app';
@@ -47,7 +51,7 @@ describe('GamesService', () => {
 
     const started = await games.start(room.code, host.id);
 
-    expect(started.drawIntervalMs).toBe(5000);
+    expect(started.drawIntervalMs).toBe(DEFAULT_DRAW_INTERVAL_MS);
     expect(
       await t.prisma.card.count({ where: { gameId: started.gameId } }),
     ).toBe(2);
@@ -407,7 +411,11 @@ describe('GamesService', () => {
     await membership.generateCard(room.code, p1.id);
     const { gameId } = await games.start(room.code, host.id);
     await expect(games.findInProgress()).resolves.toEqual([
-      { id: gameId, roomCode: room.code, drawIntervalMs: 5000 },
+      {
+        id: gameId,
+        roomCode: room.code,
+        drawIntervalMs: DEFAULT_DRAW_INTERVAL_MS,
+      },
     ]);
   });
 });

@@ -1,3 +1,4 @@
+import { DEFAULT_DRAW_INTERVAL_MS } from '../contracts';
 import { Prisma } from '../generated/prisma/client';
 import type { PrismaService } from '../core/prisma.service';
 import type { RandomInt } from '../core/random';
@@ -51,11 +52,34 @@ describe('RoomsService', () => {
     expect(prisma.room.create).toHaveBeenCalledWith({
       data: {
         ...input,
+        drawIntervalMs: DEFAULT_DRAW_INTERVAL_MS,
         code: result.code,
         hostId: 'host',
         members: { create: { userId: 'host', slot: 0 } },
       },
     });
+  });
+
+  it('create() uses the server default interval, or the one the host picked', async () => {
+    const prisma = makePrisma();
+    prisma.profile.findUnique.mockResolvedValue({ nickname: 'Host' });
+    prisma.room.create.mockResolvedValue({ id: 'room-1' });
+    const service = new RoomsService(
+      prisma as unknown as PrismaService,
+      random,
+      undefined,
+      { DEFAULT_DRAW_INTERVAL_MS: 10_000 },
+    );
+
+    await service.create('host', input);
+    await service.create('host', { ...input, drawIntervalMs: 6_000 });
+
+    const calls = prisma.room.create.mock.calls as Array<
+      [{ data: { drawIntervalMs: number } }]
+    >;
+    expect(calls.map(([arg]) => arg.data.drawIntervalMs)).toEqual([
+      10_000, 6_000,
+    ]);
   });
 
   it('create() arms a presence grace window for the host, who has no socket yet', async () => {

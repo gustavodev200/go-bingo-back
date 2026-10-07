@@ -1,4 +1,10 @@
-import { FREE_INDEX, WIN_POINTS } from '../contracts';
+import {
+  CARD_COST,
+  FREE_INDEX,
+  LOSS_COINS,
+  WIN_COINS,
+  WIN_POINTS,
+} from '../contracts';
 import type { AuthUser } from '../core/auth/jwt-verifier';
 import { Prisma } from '../generated/prisma/client';
 import type { PrismaService } from '../core/prisma.service';
@@ -34,8 +40,11 @@ function makePrisma() {
       createMany: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
-      findMany: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
     },
+    coinTransaction: { create: jest.fn(), createMany: jest.fn() },
+    // chargeUpTo (cobrança até zerar) devolve quanto tirou de cada um
+    $queryRaw: jest.fn().mockResolvedValue([]),
     roomMember: {
       updateMany: jest.fn(),
       findUnique: jest.fn(),
@@ -227,6 +236,11 @@ describe('GamesService.start', () => {
       where: { id: { in: ['host', 'guest', 'late'] } },
       data: { gamesPlayed: { increment: 1 } },
     });
+    // a cartela automática do "late" também custa (até zerar o saldo)
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw.mock.calls[0]).toEqual(
+      expect.arrayContaining([['late'], CARD_COST]),
+    );
   });
 
   it('skips dealing cards when every member already has one', async () => {
@@ -634,6 +648,7 @@ describe('GamesService.claim', () => {
         userId: 'u1',
         nickname: 'Fulano',
         pointsAwarded: WIN_POINTS,
+        coinsAwarded: WIN_COINS,
         grid: [1, 2],
       },
     });
@@ -671,6 +686,55 @@ describe('GamesService.claim', () => {
     expect(prisma.profile.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
       data: {},
+    });
+  });
+
+  it('winner gets WIN_COINS (guests too); everyone else with a card loses up to LOSS_COINS', async () => {
+    const prisma = makePrisma();
+    setupActiveCard(prisma);
+    prisma.card.findUnique.mockResolvedValue({
+      id: 'c1',
+      grid: [1, 2],
+      marked: [],
+    });
+    prisma.draw.findMany.mockResolvedValue([{ number: 1 }, { number: 2 }]);
+    prisma.game.updateMany.mockResolvedValue({ count: 1 });
+    prisma.profile.update.mockResolvedValue({ nickname: 'Fulano' });
+    prisma.card.findMany.mockResolvedValue([
+      { userId: 'u2' },
+      { userId: 'u3' },
+    ]);
+    prisma.$queryRaw.mockResolvedValue([
+      { id: 'u2', charged: 20 },
+      { id: 'u3', charged: 7 },
+    ]);
+    const service = new GamesService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+
+    const result = await service.claim('ABC123', {
+      id: 'u1',
+      isAnonymous: true,
+    });
+
+    expect(result.winner.coinsAwarded).toBe(WIN_COINS);
+    expect(prisma.profile.update).toHaveBeenCalledWith({
+      where: { id: 'u1' },
+      data: { coins: { increment: WIN_COINS } },
+    });
+    expect(prisma.card.findMany).toHaveBeenCalledWith({
+      where: { gameId: 'g1', userId: { not: 'u1' } },
+      select: { userId: true },
+    });
+    expect(prisma.$queryRaw.mock.calls[0]).toEqual(
+      expect.arrayContaining([['u2', 'u3'], LOSS_COINS]),
+    );
+    expect(prisma.coinTransaction.createMany).toHaveBeenCalledWith({
+      data: [
+        { userId: 'u2', amount: -20, reason: 'LOSS', gameId: 'g1' },
+        { userId: 'u3', amount: -7, reason: 'LOSS', gameId: 'g1' },
+      ],
     });
   });
 });

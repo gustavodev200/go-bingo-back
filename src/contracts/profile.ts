@@ -34,5 +34,12 @@ export const profileSchema = z.object({
   nickname: z.string().nullable(),
   isGuest: z.boolean(),
   points: z.number().int(),
+  coins: z.number().int().min(0),
 });
 export type Profile = z.infer<typeof profileSchema>;
+
+/** GET /me: perfil + bônus diário creditado nesta chamada (0 se já recebeu hoje). */
+export const meResponseSchema = profileSchema.extend({
+  dailyBonus: z.number().int().min(0),
+});
+export type MeResponse = z.infer<typeof meResponseSchema>;

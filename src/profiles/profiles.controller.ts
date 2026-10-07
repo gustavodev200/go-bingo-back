@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
-import type { Profile } from '../contracts';
+import type { MeResponse, Profile } from '../contracts';
 import { CurrentUser } from '../core/auth/current-user.decorator';
 import { HttpAuthGuard } from '../core/auth/http-auth.guard';
 import type { AuthUser } from '../core/auth/jwt-verifier';
@@ -15,9 +15,12 @@ const patchSchema = z.object({ nickname: z.string() });
 export class ProfilesController {
   constructor(private readonly profiles: ProfilesService) {}
 
+  /** Abrir o jogo conta como "entrar no dia": credita o bônus diário uma vez por dia. */
   @Get()
-  async me(@CurrentUser() user: AuthUser): Promise<Profile> {
-    return this.profiles.toDto(await this.profiles.ensure(user));
+  async me(@CurrentUser() user: AuthUser): Promise<MeResponse> {
+    const profile = this.profiles.toDto(await this.profiles.ensure(user));
+    const dailyBonus = await this.profiles.claimDaily(user.id);
+    return { ...profile, coins: profile.coins + dailyBonus, dailyBonus };
   }
 
   @Patch()

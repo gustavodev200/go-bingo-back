@@ -1,4 +1,4 @@
-import { MAX_CARD_REGENS } from '../contracts';
+import { CARD_COST, MAX_CARD_REGENS } from '../contracts';
 import { Prisma } from '../generated/prisma/client';
 import type { PrismaService } from '../core/prisma.service';
 import type { RandomInt } from '../core/random';
@@ -13,7 +13,12 @@ function uniqueViolation() {
 
 function makePrisma() {
   const models = {
-    profile: { findUnique: jest.fn() },
+    // updateMany = cobrança da cartela (saldo suficiente por padrão)
+    profile: {
+      findUnique: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    coinTransaction: { create: jest.fn() },
     room: { findUnique: jest.fn(), update: jest.fn() },
     roomMember: {
       findMany: jest.fn(),
@@ -519,5 +524,48 @@ describe('MembershipService.generateCard', () => {
       where: { roomId_userId: { roomId: 'r1', userId: 'u1' } },
       data: { cardRegens: { increment: 1 } },
     });
+  });
+
+  it('charges CARD_COST coins for every card, first one and regenerations', async () => {
+    const prisma = makePrisma();
+    prisma.room.findUnique.mockResolvedValue({ id: 'r1', status: 'WAITING' });
+    prisma.roomMember.findUnique.mockResolvedValue({ cardRegens: 0 });
+    prisma.card.findFirst.mockResolvedValue(null);
+    prisma.card.create.mockResolvedValue({ id: 'c1', grid: [1] });
+    const service = new MembershipService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+
+    await service.generateCard('ABC123', 'u1');
+    expect(prisma.profile.updateMany).toHaveBeenCalledWith({
+      where: { id: 'u1', coins: { gte: CARD_COST } },
+      data: { coins: { decrement: CARD_COST } },
+    });
+    expect(prisma.coinTransaction.create).toHaveBeenCalledWith({
+      data: {
+        userId: 'u1',
+        amount: -CARD_COST,
+        reason: 'CARD',
+        gameId: undefined,
+      },
+    });
+  });
+
+  it('refuses the card without enough coins and creates nothing', async () => {
+    const prisma = makePrisma();
+    prisma.room.findUnique.mockResolvedValue({ id: 'r1', status: 'WAITING' });
+    prisma.roomMember.findUnique.mockResolvedValue({ cardRegens: 0 });
+    prisma.card.findFirst.mockResolvedValue(null);
+    prisma.profile.updateMany.mockResolvedValue({ count: 0 });
+    const service = new MembershipService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+
+    await expect(service.generateCard('ABC123', 'u1')).rejects.toMatchObject({
+      code: 'INSUFFICIENT_COINS',
+    });
+    expect(prisma.card.create).not.toHaveBeenCalled();
   });
 });

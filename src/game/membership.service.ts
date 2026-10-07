@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { MAX_CARD_REGENS, type Card } from '../contracts';
+import { charge } from '../coins/ledger';
+import { CARD_COST, MAX_CARD_REGENS, type Card } from '../contracts';
 import { DomainError } from '../core/domain-error';
 import { isUniqueViolation } from '../core/prisma-errors';
 import { PrismaService } from '../core/prisma.service';
@@ -142,29 +143,31 @@ export class MembershipService {
     const existing = await this.prisma.card.findFirst({
       where: { roomId: room.id, userId, gameId: null },
     });
-    if (!existing) {
-      const created = await this.prisma.card.create({
-        data: { roomId: room.id, userId, grid },
-      });
-      return { id: created.id, grid: created.grid, marked: [] };
-    }
-    if (member.cardRegens >= MAX_CARD_REGENS)
+    if (existing && member.cardRegens >= MAX_CARD_REGENS)
       throw new DomainError(
         'REGEN_LIMIT',
         `Você já trocou a cartela ${MAX_CARD_REGENS} vezes`,
       );
 
-    const [, updated] = await this.prisma.$transaction([
-      this.prisma.roomMember.update({
+    // Cada cartela (primeira ou troca) custa CARD_COST; sem saldo, nada muda.
+    return this.prisma.$transaction(async (tx) => {
+      await charge(tx, userId, CARD_COST, 'CARD');
+      if (!existing) {
+        const created = await tx.card.create({
+          data: { roomId: room.id, userId, grid },
+        });
+        return { id: created.id, grid: created.grid, marked: [] };
+      }
+      await tx.roomMember.update({
         where: { roomId_userId: { roomId: room.id, userId } },
         data: { cardRegens: { increment: 1 } },
-      }),
-      this.prisma.card.update({
+      });
+      const updated = await tx.card.update({
         where: { id: existing.id },
         data: { grid, marked: [] },
-      }),
-    ]);
-    return { id: updated.id, grid: updated.grid, marked: [] };
+      });
+      return { id: updated.id, grid: updated.grid, marked: [] };
+    });
   }
 
   private async openRoom(code: string) {
