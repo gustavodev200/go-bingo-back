@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { ClientEvents, roomChannel, ServerEvents } from '../contracts';
 import { DomainError } from '../core/domain-error';
 import type { JwtVerifier } from '../core/auth/jwt-verifier';
@@ -12,6 +13,8 @@ import type { MembershipService } from './membership.service';
 import type { PresenceService } from './presence.service';
 import type { RealtimePublisher } from './realtime-publisher';
 import type { SnapshotService } from './snapshot.service';
+
+jest.mock('@sentry/nestjs', () => ({ captureException: jest.fn() }));
 
 function makeDeps() {
   const verifier = { verify: jest.fn() };
@@ -212,6 +215,30 @@ describe('GameGateway.afterInit', () => {
   });
 });
 
+describe('GameGateway presence expiry errors', () => {
+  it('logs and reports to Sentry when removing an expired member fails', async () => {
+    const { gateway, presence, membership } = makeDeps();
+    const boom = new Error('db down');
+    membership.leave.mockRejectedValue(boom);
+    const logger = jest
+      .spyOn(
+        (gateway as unknown as { logger: { error: (e: unknown) => void } })
+          .logger,
+        'error',
+      )
+      .mockImplementation(() => undefined);
+    (Sentry.captureException as jest.Mock).mockClear();
+    gateway.afterInit({ use: jest.fn() } as never);
+
+    const onExpired = presence.setExpiryHandler.mock.calls[0][0];
+    onExpired('ABC123', user.id);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(logger).toHaveBeenCalledWith(boom);
+    expect(Sentry.captureException).toHaveBeenCalledWith(boom);
+  });
+});
+
 describe('GameGateway.handleDisconnect', () => {
   it('does nothing when the socket never joined a room', () => {
     const { gateway, publisher } = makeDeps();
@@ -310,6 +337,7 @@ describe('GameGateway.onWatch / handle() wrapper', () => {
       error: { code: 'INTERNAL', message: 'Erro interno' },
     });
     expect(logger).toHaveBeenCalledWith(boom);
+    expect(Sentry.captureException).toHaveBeenCalledWith(boom);
   });
 
   it('rate-limits a burst of calls from the same socket', async () => {
