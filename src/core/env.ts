@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+// Templates de secrets costumam deixar a variável vazia; vazio = ausente.
+const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
+
 const envSchema = z.object({
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
@@ -9,8 +12,11 @@ const envSchema = z.object({
   DIRECT_URL: z.url(),
   CORS_ORIGIN: z.url(),
   SUPABASE_URL: z.url(),
-  SENTRY_DSN: z.url().optional(),
-  SENTRY_ENVIRONMENT: z.string().min(1).optional(),
+  SENTRY_DSN: z.preprocess(emptyToUndefined, z.url().optional()),
+  SENTRY_ENVIRONMENT: z.preprocess(
+    emptyToUndefined,
+    z.string().min(1).optional(),
+  ),
   // z.coerce.boolean() faria TRUST_PROXY=false virar `true` (Boolean("false")
   // é truthy — qualquer string não vazia é). z.stringbool() interpreta o
   // literal "true"/"false" (e variantes como "1"/"0") corretamente.

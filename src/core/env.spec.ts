@@ -66,4 +66,10 @@ describe('loadEnv', () => {
     ).toBe('https://k@o1.ingest.sentry.io/1');
     expect(() => loadEnv({ ...valid, SENTRY_DSN: 'nao-e-url' })).toThrow();
   });
+
+  it('string vazia em SENTRY_DSN/SENTRY_ENVIRONMENT conta como ausente', () => {
+    const env = loadEnv({ ...valid, SENTRY_DSN: '', SENTRY_ENVIRONMENT: '' });
+    expect(env.SENTRY_DSN).toBeUndefined();
+    expect(env.SENTRY_ENVIRONMENT).toBeUndefined();
+  });
 });
