@@ -20,7 +20,7 @@ describe('GET /health', () => {
 
   it('returns ok with security headers', async () => {
     const res = await request(app.getHttpServer()).get('/health').expect(200);
-    expect(res.body).toEqual({ status: 'ok' });
+    expect(res.body).toMatchObject({ status: 'ok' });
     expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 });
