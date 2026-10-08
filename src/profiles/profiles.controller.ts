@@ -1,6 +1,12 @@
 import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
-import type { MeResponse, Profile, ProfileStats } from '../contracts';
+import {
+  characterSchema,
+  type CharacterId,
+  type MeResponse,
+  type Profile,
+  type ProfileStats,
+} from '../contracts';
 import { CurrentUser } from '../core/auth/current-user.decorator';
 import { HttpAuthGuard } from '../core/auth/http-auth.guard';
 import type { AuthUser } from '../core/auth/jwt-verifier';
@@ -9,7 +15,15 @@ import { RankingService } from '../ranking/ranking.service';
 import { ProfilesService } from './profiles.service';
 
 // O formato do apelido é validado no service (para mapear para NICKNAME_INVALID); aqui só o tipo.
-const patchSchema = z.object({ nickname: z.string() });
+const patchSchema = z
+  .object({
+    nickname: z.string().optional(),
+    character: characterSchema.optional(),
+  })
+  .refine(
+    (p) => p.nickname !== undefined || p.character !== undefined,
+    'Nada para atualizar',
+  );
 
 @Controller('me')
 @UseGuards(HttpAuthGuard)
@@ -40,8 +54,9 @@ export class ProfilesController {
   @Patch()
   update(
     @CurrentUser() user: AuthUser,
-    @Body(new ZodPipe(patchSchema)) body: { nickname: string },
+    @Body(new ZodPipe(patchSchema))
+    body: { nickname?: string; character?: CharacterId },
   ): Promise<Profile> {
-    return this.profiles.setNickname(user, body.nickname);
+    return this.profiles.update(user, body);
   }
 }

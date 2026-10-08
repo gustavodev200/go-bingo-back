@@ -49,6 +49,7 @@ export class SnapshotService {
       members: room.members.map((m) => ({
         userId: m.userId,
         nickname: m.profile.nickname ?? 'Jogador',
+        character: m.profile.character,
         slot: m.slot,
         isGuest: m.profile.isGuest,
         connected: connected.has(m.userId),

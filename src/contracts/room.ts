@@ -51,6 +51,8 @@ export type PublicRoom = z.infer<typeof publicRoomSchema>;
 export const memberSchema = z.object({
   userId: z.uuid(),
   nickname: z.string(),
+  /** Id do personagem escolhido (null = derivado do userId). String solta: id desconhecido cai no derivado. */
+  character: z.string().nullish(),
   slot: z.number().int(),
   isGuest: z.boolean(),
   connected: z.boolean(),

@@ -68,6 +68,29 @@ describe('/me', () => {
     expect(body.nickname).toBe('Gustavo');
   });
 
+  it('saves the chosen character with the nickname and returns it on GET /me', async () => {
+    const token = await t.auth.sign(randomUUID());
+    await request(t.url)
+      .patch('/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ nickname: 'Ana', character: 'c07' })
+      .expect(200);
+    const res = await request(t.url)
+      .get('/me')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(res.body).toMatchObject({ nickname: 'Ana', character: 'c07' });
+  });
+
+  it.each([{ character: 'c99' }, {}])('rejects patch %j', async (body) => {
+    const token = await t.auth.sign(randomUUID());
+    const res = await request(t.url)
+      .patch('/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send(body);
+    expect(res.status).toBe(400);
+  });
+
   it.each(['ab', '<b>oi</b>', 'caralho'])(
     'rejects nickname %s',
     async (nickname) => {

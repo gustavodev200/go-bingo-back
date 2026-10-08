@@ -39,6 +39,8 @@ enum CoinReason {
 model Profile {
   id               String            @id @db.Uuid
   nickname         String?           @db.VarChar(16)
+  /// Personagem escolhido no seletor (CHARACTER_IDS); null = boneco derivado do id.
+  character        String?           @db.VarChar(8)
   isGuest          Boolean           @default(true)
   points           Int               @default(0)
   gamesPlayed      Int               @default(0)

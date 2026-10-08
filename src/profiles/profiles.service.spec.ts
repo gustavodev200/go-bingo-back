@@ -26,6 +26,7 @@ function makePrisma() {
 const row = {
   id: 'u1',
   nickname: 'Fulano',
+  character: null,
   isGuest: false,
   points: 10,
   coins: 120,
@@ -152,15 +153,17 @@ describe('ProfilesService.claimDaily', () => {
   });
 });
 
-describe('ProfilesService.setNickname', () => {
+describe('ProfilesService.update', () => {
   it('rejects a malformed nickname with the Zod message', async () => {
     const prisma = makePrisma();
     const service = new ProfilesService(prisma as unknown as PrismaService);
     const user: AuthUser = { id: 'u1', isAnonymous: false };
 
-    await expect(service.setNickname(user, 'a')).rejects.toMatchObject({
-      code: 'NICKNAME_INVALID',
-    });
+    await expect(service.update(user, { nickname: 'a' })).rejects.toMatchObject(
+      {
+        code: 'NICKNAME_INVALID',
+      },
+    );
     expect(prisma.profile.update).not.toHaveBeenCalled();
   });
 
@@ -169,7 +172,7 @@ describe('ProfilesService.setNickname', () => {
     const service = new ProfilesService(prisma as unknown as PrismaService);
     const user: AuthUser = { id: 'u1', isAnonymous: false };
 
-    await expect(service.setNickname(user, 'porra')).rejects.toEqual(
+    await expect(service.update(user, { nickname: 'porra' })).rejects.toEqual(
       new DomainError('NICKNAME_INVALID', 'Apelido não permitido'),
     );
   });
@@ -181,7 +184,7 @@ describe('ProfilesService.setNickname', () => {
     const service = new ProfilesService(prisma as unknown as PrismaService);
     const user: AuthUser = { id: 'u1', isAnonymous: false };
 
-    const result = await service.setNickname(user, 'Novo Nome');
+    const result = await service.update(user, { nickname: 'Novo Nome' });
 
     expect(prisma.profile.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
@@ -191,9 +194,55 @@ describe('ProfilesService.setNickname', () => {
       id: 'u1',
       nickname: 'Novo Nome',
       isGuest: false,
+      character: null,
       points: 10,
       coins: 120,
     });
+  });
+
+  it('saves nickname and character in a single write', async () => {
+    const prisma = makePrisma();
+    prisma.profile.findUnique.mockResolvedValue(row);
+    prisma.profile.update.mockResolvedValue({
+      ...row,
+      nickname: 'Ana',
+      character: 'c07',
+    });
+    const service = new ProfilesService(prisma as unknown as PrismaService);
+
+    const result = await service.update(
+      { id: 'u1', isAnonymous: false },
+      { nickname: 'Ana', character: 'c07' },
+    );
+
+    expect(prisma.profile.update).toHaveBeenCalledTimes(1);
+    expect(prisma.profile.update).toHaveBeenCalledWith({
+      where: { id: 'u1' },
+      data: { nickname: 'Ana', character: 'c07' },
+    });
+    expect(result).toMatchObject({ nickname: 'Ana', character: 'c07' });
+  });
+
+  it('changes only the character, keeping the nickname', async () => {
+    const prisma = makePrisma();
+    prisma.profile.findUnique.mockResolvedValue(row);
+    prisma.profile.update.mockResolvedValue({ ...row, character: 'c02' });
+    const service = new ProfilesService(prisma as unknown as PrismaService);
+
+    await service.update(
+      { id: 'u1', isAnonymous: false },
+      { character: 'c02' },
+    );
+
+    expect(prisma.profile.update).toHaveBeenCalledWith({
+      where: { id: 'u1' },
+      data: { character: 'c02' },
+    });
+  });
+
+  it('toDto() reports an unknown stored character as null (falls back to the id-derived avatar)', () => {
+    const service = new ProfilesService({} as unknown as PrismaService);
+    expect(service.toDto({ ...row, character: 'zz9' }).character).toBeNull();
   });
 
   it('toDto() projects only the public profile fields', () => {
@@ -202,6 +251,7 @@ describe('ProfilesService.setNickname', () => {
       id: 'u1',
       nickname: 'Fulano',
       isGuest: false,
+      character: null,
       points: 10,
       coins: 120,
     });

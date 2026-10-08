@@ -28,12 +28,47 @@ export function isNicknameAllowed(nickname: string): boolean {
   return !BLOCKED_WORDS.some((w) => n.includes(w));
 }
 
-export const updateProfileSchema = z.object({ nickname: nicknameSchema });
+/**
+ * Personagens prontos do seletor (setas ← →). O back só conhece os ids; a aparência de cada um mora no front.
+ * Nunca remover/renomear um id: perfis salvos apontam para ele.
+ */
+export const CHARACTER_IDS = [
+  'c01',
+  'c02',
+  'c03',
+  'c04',
+  'c05',
+  'c06',
+  'c07',
+  'c08',
+  'c09',
+  'c10',
+  'c11',
+  'c12',
+  'c13',
+  'c14',
+  'c15',
+  'c16',
+] as const;
+export const characterSchema = z.enum(CHARACTER_IDS);
+export type CharacterId = z.infer<typeof characterSchema>;
+
+export const updateProfileSchema = z
+  .object({
+    nickname: nicknameSchema.optional(),
+    character: characterSchema.optional(),
+  })
+  .refine(
+    (p) => p.nickname !== undefined || p.character !== undefined,
+    'Nada para atualizar',
+  );
 
 export const profileSchema = z.object({
   id: z.uuid(),
   nickname: z.string().nullable(),
   isGuest: z.boolean(),
+  /** Personagem escolhido; null = boneco derivado do id. Opcional: um front novo continua funcionando contra uma API anterior ao campo. */
+  character: characterSchema.nullish(),
   points: z.number().int(),
   coins: z.number().int().min(0),
 });

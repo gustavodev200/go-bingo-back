@@ -41,12 +41,12 @@ describe('SnapshotService.build', () => {
         {
           userId: 'host',
           slot: 0,
-          profile: { nickname: null, isGuest: false },
+          profile: { nickname: null, isGuest: false, character: null },
         },
         {
           userId: 'u1',
           slot: 1,
-          profile: { nickname: 'Ana', isGuest: true },
+          profile: { nickname: 'Ana', isGuest: true, character: 'c05' },
         },
       ],
     });
@@ -72,6 +72,7 @@ describe('SnapshotService.build', () => {
       {
         userId: 'host',
         nickname: 'Jogador',
+        character: null,
         slot: 0,
         isGuest: false,
         connected: false,
@@ -80,6 +81,7 @@ describe('SnapshotService.build', () => {
       {
         userId: 'u1',
         nickname: 'Ana',
+        character: 'c05',
         slot: 1,
         isGuest: true,
         connected: true,

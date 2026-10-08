@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { credit, saoPauloDay } from '../coins/ledger';
 import {
+  characterSchema,
   COIN_HISTORY_LIMIT,
   DAILY_COINS,
   isNicknameAllowed,
+  type CharacterId,
   nicknameSchema,
   WELCOME_COINS,
   type Profile,
@@ -72,22 +74,28 @@ export class ProfilesService {
     });
   }
 
-  async setNickname(user: AuthUser, raw: string): Promise<Profile> {
-    const parsed = nicknameSchema.safeParse(raw);
-    if (!parsed.success || !isNicknameAllowed(parsed.data)) {
-      throw new DomainError(
-        'NICKNAME_INVALID',
-        parsed.success
-          ? 'Apelido não permitido'
-          : parsed.error.issues[0].message,
-      );
+  /** Troca apelido e/ou personagem numa escrita só (o seletor salva os dois juntos no primeiro acesso). */
+  async update(
+    user: AuthUser,
+    patch: { nickname?: string; character?: CharacterId },
+  ): Promise<Profile> {
+    const data: { nickname?: string; character?: CharacterId } = {};
+    if (patch.nickname !== undefined) {
+      const parsed = nicknameSchema.safeParse(patch.nickname);
+      if (!parsed.success || !isNicknameAllowed(parsed.data)) {
+        throw new DomainError(
+          'NICKNAME_INVALID',
+          parsed.success
+            ? 'Apelido não permitido'
+            : parsed.error.issues[0].message,
+        );
+      }
+      data.nickname = parsed.data;
     }
+    if (patch.character !== undefined) data.character = patch.character;
     await this.ensure(user);
     return this.toDto(
-      await this.prisma.profile.update({
-        where: { id: user.id },
-        data: { nickname: parsed.data },
-      }),
+      await this.prisma.profile.update({ where: { id: user.id }, data }),
     );
   }
 
@@ -122,6 +130,7 @@ export class ProfilesService {
       id: row.id,
       nickname: row.nickname,
       isGuest: row.isGuest,
+      character: characterSchema.safeParse(row.character).data ?? null,
       points: row.points,
       coins: row.coins,
     };

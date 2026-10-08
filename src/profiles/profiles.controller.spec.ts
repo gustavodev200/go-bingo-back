@@ -58,19 +58,25 @@ describe('ProfilesController', () => {
     });
   });
 
-  it('update() delegates nickname changes to the service', () => {
+  it('update() delegates nickname/character changes to the service', () => {
     const dto = { id: 'u1', nickname: 'Novo', isGuest: false, points: 0 };
     const profiles = {
-      setNickname: jest.fn().mockResolvedValue(dto),
+      update: jest.fn().mockResolvedValue(dto),
     };
     const controller = new ProfilesController(
       profiles as unknown as ProfilesService,
       {} as RankingService,
     );
 
-    const result = controller.update(user, { nickname: 'Novo' });
+    const result = controller.update(user, {
+      nickname: 'Novo',
+      character: 'c03',
+    });
 
-    expect(profiles.setNickname).toHaveBeenCalledWith(user, 'Novo');
+    expect(profiles.update).toHaveBeenCalledWith(user, {
+      nickname: 'Novo',
+      character: 'c03',
+    });
     return expect(result).resolves.toBe(dto);
   });
 });
