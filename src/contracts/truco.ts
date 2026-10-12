@@ -163,6 +163,8 @@ export interface TrucoRoomState {
   code: string;
   version: number;
   hostId: string;
+  /** Public tables are listed in the truco lobby; private ones are joined by code only. */
+  isPublic: boolean;
   phase: TrucoRoomPhase;
   lobbyStatus: TrucoLobbyStatus | null;
   seats: (TrucoSeatPlayer | null)[];
@@ -184,6 +186,17 @@ export interface TrucoPrivateHand {
   /** Partner cards, shown only to the team at 10 while it decides the mão de dez. */
   partnerCards: TrucoCard[] | null;
 }
+
+/** A public table still taking players, as listed in the truco lobby. */
+export interface TrucoPublicRoom {
+  code: string;
+  hostNickname: string;
+  hostCharacter: string | null;
+  players: number;
+}
+
+/** Room for the lobby watchers channel (inside the /truco namespace). */
+export const TRUCO_PUBLIC_ROOMS_CHANNEL = 'truco-public-rooms';
 
 export interface TrucoSnapshot {
   state: TrucoRoomState;
@@ -214,6 +227,9 @@ export const TRUCO_NAMESPACE = '/truco';
 
 export const TrucoClientEvents = {
   CREATE: 'truco:create',
+  WATCH_ROOMS: 'truco:watch_rooms',
+  UNWATCH_ROOMS: 'truco:unwatch_rooms',
+  SET_VISIBILITY: 'truco:set_visibility',
   JOIN: 'truco:join',
   LEAVE: 'truco:leave',
   TAKE_SEAT: 'truco:take_seat',
@@ -248,11 +264,17 @@ export const TrucoServerEvents = {
   SIGNAL_RECEIVED: 'truco:signal_received',
   GESTURED: 'truco:gestured',
   ROOM_CLOSED: 'truco:room_closed',
+  ROOMS_UPDATED: 'truco:rooms_updated',
 } as const;
 
 const actionIdSchema = z.string().min(8).max(64);
 
 export const trucoEmptySchema = z.object({}).strict();
+/** Absent isPublic (older clients) = public. */
+export const trucoCreateSchema = z
+  .object({ isPublic: z.boolean().default(true) })
+  .strict();
+export const trucoVisibilitySchema = z.object({ isPublic: z.boolean() });
 export const trucoJoinSchema = z.object({ code: roomCodeSchema });
 export const trucoTakeSeatSchema = z.object({
   seat: z.number().int().min(0).max(3),
@@ -336,11 +358,15 @@ export interface TrucoServerEventPayloads {
   'truco:signal_received': { fromSeat: Seat; gesture: TrucoGesture };
   'truco:gestured': { seat: Seat };
   'truco:room_closed': { reason: TrucoClosedReason };
+  'truco:rooms_updated': { rooms: TrucoPublicRoom[] };
 }
 export type TrucoServerEventName = keyof TrucoServerEventPayloads;
 
 export interface TrucoClientAckData {
   'truco:create': TrucoSnapshot;
+  'truco:watch_rooms': TrucoPublicRoom[];
+  'truco:unwatch_rooms': null;
+  'truco:set_visibility': null;
   'truco:join': TrucoSnapshot;
   'truco:leave': null;
   'truco:take_seat': null;

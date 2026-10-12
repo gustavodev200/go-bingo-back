@@ -13,7 +13,9 @@ import { z } from 'zod';
 import {
   roomChannel,
   TRUCO_NAMESPACE,
+  TRUCO_PUBLIC_ROOMS_CHANNEL,
   TrucoClientEvents,
+  trucoCreateSchema,
   trucoEmptySchema,
   trucoJoinSchema,
   trucoPlayCardSchema,
@@ -23,6 +25,7 @@ import {
   trucoSignalSchema,
   trucoTakeSeatSchema,
   trucoTenDecisionSchema,
+  trucoVisibilitySchema,
   userChannel,
   type Ack,
   type Seat,
@@ -111,15 +114,65 @@ export class TrucoGateway
     @ConnectedSocket() socket: TrucoSocket,
     @MessageBody() body: unknown,
   ) {
-    return this.handle(socket, 'create', trucoEmptySchema, body, async () => {
-      const snapshot = this.tables.create(this.player(socket), socket.id);
-      await socket.join(roomChannel(snapshot.state.code));
-      this.logger.log({
-        event: 'truco_room_created',
-        roomCode: snapshot.state.code,
-      });
-      return snapshot;
+    return this.handle(
+      socket,
+      'create',
+      trucoCreateSchema,
+      body,
+      async (_, { isPublic }) => {
+        const snapshot = this.tables.create(
+          this.player(socket),
+          socket.id,
+          isPublic,
+        );
+        await socket.join(roomChannel(snapshot.state.code));
+        this.logger.log({
+          event: 'truco_room_created',
+          roomCode: snapshot.state.code,
+        });
+        return snapshot;
+      },
+    );
+  }
+
+  /** Lobby screen: current public tables now, then `truco:rooms_updated` on every change. */
+  @SubscribeMessage(TrucoClientEvents.WATCH_ROOMS)
+  onWatchRooms(
+    @ConnectedSocket() socket: TrucoSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(socket, 'default', trucoEmptySchema, body, async () => {
+      await socket.join(TRUCO_PUBLIC_ROOMS_CHANNEL);
+      return this.tables.listPublic();
     });
+  }
+
+  @SubscribeMessage(TrucoClientEvents.UNWATCH_ROOMS)
+  onUnwatchRooms(
+    @ConnectedSocket() socket: TrucoSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(socket, 'default', trucoEmptySchema, body, async () => {
+      await socket.leave(TRUCO_PUBLIC_ROOMS_CHANNEL);
+      return null;
+    });
+  }
+
+  @SubscribeMessage(TrucoClientEvents.SET_VISIBILITY)
+  onSetVisibility(
+    @ConnectedSocket() socket: TrucoSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      trucoVisibilitySchema,
+      body,
+      (user, { isPublic }) => {
+        this.tables.setVisibility(user.id, isPublic);
+        return Promise.resolve(null);
+      },
+    );
   }
 
   @SubscribeMessage(TrucoClientEvents.JOIN)

@@ -235,6 +235,40 @@ describe('TrucoGateway (Socket.IO integration)', () => {
     ).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_PAYLOAD' } });
   });
 
+  it('lists public tables live and never private ones', async () => {
+    const [watcher, a, b] = await Promise.all([
+      connect('u4'),
+      connect('u0'),
+      connect('u1'),
+    ]);
+    await expect(ok(watcher, 'truco:watch_rooms')).resolves.toEqual([]);
+    const pub = await ok<TrucoSnapshot>(a, 'truco:create', { isPublic: true });
+    await ok(b, 'truco:create', { isPublic: false });
+    const update = await waitFor<{
+      rooms: { code: string; players: number }[];
+    }>(watcher, 'truco:rooms_updated', (p) => p.rooms.length > 0);
+    expect(update.rooms).toEqual([
+      expect.objectContaining({
+        code: pub.state.code,
+        hostNickname: 'Ana',
+        players: 1,
+      }),
+    ]);
+    // The host hides it: the list empties.
+    await ok(a, 'truco:set_visibility', { isPublic: false });
+    await expect(
+      waitFor<{ rooms: unknown[] }>(
+        watcher,
+        'truco:rooms_updated',
+        (p) => p.rooms.length === 0,
+      ),
+    ).resolves.toEqual({ rooms: [] });
+    await expect(
+      emit(watcher, 'truco:create', { isPublic: 'yes' }),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_PAYLOAD' } });
+    await ok(watcher, 'truco:unwatch_rooms');
+  });
+
   it('does not start with fewer than four players', async () => {
     const [a, b] = await Promise.all([connect('u0'), connect('u1')]);
     const { state } = await ok<TrucoSnapshot>(a, 'truco:create');

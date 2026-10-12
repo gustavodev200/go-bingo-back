@@ -1,5 +1,6 @@
 import type {
   TrucoPrivateHand,
+  TrucoPublicRoom,
   TrucoRoomState,
   TrucoServerEventName,
 } from '../contracts';
@@ -29,6 +30,12 @@ class FakePublisher implements TrucoPublisher {
   }
   removeFromRoom(userId: string, code: string) {
     this.removed.push(`${userId}@${code}`);
+  }
+  publicList: () => TrucoPublicRoom[] = () => [];
+  publicChanges = 0;
+  publicRoomsChanged(list: () => TrucoPublicRoom[]) {
+    this.publicChanges++;
+    this.publicList = list;
   }
   last<T>(event: TrucoServerEventName, to?: string): T {
     const found = this.sent.filter(
@@ -485,5 +492,56 @@ describe('TrucoRoomsService — presence', () => {
     t.service.onModuleDestroy();
     expect(t.timer.pending).toHaveLength(0);
     expect(t.service.roomOf(bia.userId)).toBeUndefined();
+  });
+});
+
+describe('TrucoRoomsService — public tables', () => {
+  it('creates public tables by default and private ones on request', () => {
+    const t = setup();
+    expect(t.service.create(ana, 's1').state.isPublic).toBe(true);
+    expect(t.service.create(bia, 's2', false).state.isPublic).toBe(false);
+  });
+
+  it('lists only public tables that still take players, fullest first', () => {
+    const t = setup();
+    const lone = t.service.create(ana, 's1').state.code;
+    t.service.create(bia, 's2', false);
+    const pair = t.service.create(caio, 's3').state.code;
+    t.service.join(pair, duda, 's4');
+    expect(t.service.listPublic()).toEqual([
+      { code: pair, hostNickname: 'Caio', hostCharacter: null, players: 2 },
+      { code: lone, hostNickname: 'Ana', hostCharacter: null, players: 1 },
+    ]);
+    expect(t.publisher.publicChanges).toBeGreaterThan(0);
+    expect(t.publisher.publicList()).toHaveLength(2);
+  });
+
+  it('hides full and playing tables and shows them again after the match', () => {
+    const t = setup();
+    const code = full(t);
+    expect(t.service.listPublic()).toEqual([]);
+    for (const p of [ana, bia, caio, duda]) t.service.setReady(p.userId, true);
+    t.service.start(ana.userId);
+    t.service.leave(duda.userId); // walkover: finished with a free seat
+    expect(t.service.listPublic()).toMatchObject([{ code, players: 3 }]);
+  });
+
+  it('lets only the host switch visibility and drops deleted rooms from the list', () => {
+    const t = setup();
+    const { code } = t.service.create(ana, 's1').state;
+    t.service.join(code, bia, 's2');
+    expect(errorCode(() => t.service.setVisibility(bia.userId, false))).toBe(
+      'NOT_HOST',
+    );
+    t.service.setVisibility(ana.userId, false);
+    expect(state(t).isPublic).toBe(false);
+    expect(t.service.listPublic()).toEqual([]);
+    t.service.setVisibility(ana.userId, true);
+    expect(t.service.listPublic()).toHaveLength(1);
+    const before = t.publisher.publicChanges;
+    t.service.leave(bia.userId);
+    t.service.leave(ana.userId);
+    expect(t.publisher.publicChanges).toBeGreaterThan(before);
+    expect(t.publisher.publicList()).toEqual([]);
   });
 });

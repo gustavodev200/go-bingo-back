@@ -52,7 +52,10 @@ Cliente → servidor (todos com ack `{ ok, data } | { ok: false, error }`):
 
 | Evento | Payload |
 |---|---|
-| `truco:create` | `{}` → snapshot |
+| `truco:create` | `{ isPublic? }` (padrão pública) → snapshot |
+| `truco:watch_rooms` | `{}` → mesas públicas; passa a receber `truco:rooms_updated` |
+| `truco:unwatch_rooms` | `{}` |
+| `truco:set_visibility` | `{ isPublic }` (só o anfitrião) |
 | `truco:join` | `{ code }` → snapshot (também é a reconexão) |
 | `truco:sync` | `{}` → snapshot |
 | `truco:leave` | `{}` |
@@ -71,7 +74,11 @@ Servidor → cliente: `truco:state` (estado público, com `version`), `truco:pri
 `truco:player_reconnected`, `truco:match_started`, `truco:hand_dealt`, `truco:card_played`,
 `truco:round_ended`, `truco:hand_ended`, `truco:bet_requested`, `truco:bet_resolved`,
 `truco:ten_decided`, `truco:score_updated`, `truco:match_over`, `truco:signal_received`
-(só o parceiro), `truco:gestured` (só os adversários, sem o gesto), `truco:room_closed`.
+(só o parceiro), `truco:gestured` (só os adversários, sem o gesto), `truco:room_closed`,
+`truco:rooms_updated` (lista de mesas públicas, só para quem está no lobby observando).
+
+Mesas públicas aparecem na lista enquanto não estão em partida e têm lugar vago; privadas só
+entram pelo código. A lista é reenviada com debounce de 300 ms a cada mudança.
 
 Todo anúncio leva `seq` crescente por sala: o cliente descarta duplicados, então grito, som e
 voz tocam uma vez só. O estado leva `version`; o cliente ignora versões antigas.

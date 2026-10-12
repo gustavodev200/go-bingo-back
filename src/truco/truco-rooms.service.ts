@@ -9,6 +9,7 @@ import {
   type TrucoGesture,
   type TrucoLeftReason,
   type TrucoMatchResult,
+  type TrucoPublicRoom,
   type TrucoRoomPhase,
   type TrucoRoomState,
   type TrucoSnapshot,
@@ -49,6 +50,7 @@ interface SeatState extends TrucoPlayer {
 interface Room {
   code: string;
   hostId: string;
+  isPublic: boolean;
   phase: TrucoRoomPhase;
   seats: (SeatState | null)[];
   match: TrucoMatch | null;
@@ -92,7 +94,11 @@ export class TrucoRoomsService implements OnModuleDestroy {
     return this.userRoom.get(userId);
   }
 
-  create(player: TrucoPlayer, socketId: string): TrucoSnapshot {
+  create(
+    player: TrucoPlayer,
+    socketId: string,
+    isPublic = true,
+  ): TrucoSnapshot {
     this.assertFree(player.userId);
     if (this.rooms.size >= this.config.maxRooms)
       throw new DomainError(
@@ -105,6 +111,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
     const room: Room = {
       code,
       hostId: player.userId,
+      isPublic,
       phase: 'LOBBY',
       seats: Array.from({ length: TRUCO_SEATS }, () => null),
       match: null,
@@ -156,6 +163,32 @@ export class TrucoRoomsService implements OnModuleDestroy {
     this.ensureConnectedHost(room);
     this.publish(room, out);
     return this.snapshot(room, player.userId);
+  }
+
+  /** Public tables that can still be joined (not playing, a seat free), fullest first. */
+  listPublic(): TrucoPublicRoom[] {
+    const out: TrucoPublicRoom[] = [];
+    for (const room of this.rooms.values()) {
+      const players = room.seats.filter((s) => s !== null).length;
+      if (!room.isPublic || room.phase === 'PLAYING' || players >= TRUCO_SEATS)
+        continue;
+      const host = room.seats.find((s) => s?.userId === room.hostId)!;
+      out.push({
+        code: room.code,
+        hostNickname: host.nickname,
+        hostCharacter: host.character,
+        players,
+      });
+    }
+    return out.sort((a, b) => b.players - a.players);
+  }
+
+  setVisibility(userId: string, isPublic: boolean): void {
+    const room = this.requireRoom(userId);
+    if (room.hostId !== userId)
+      throw new DomainError('NOT_HOST', 'Só o anfitrião muda a visibilidade');
+    room.isPublic = isPublic;
+    this.publish(room, []);
   }
 
   sync(userId: string): TrucoSnapshot {
@@ -352,6 +385,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
     if (room.seats.every((s) => s === null)) {
       this.clearTimers(room);
       this.rooms.delete(room.code);
+      this.publisher.publicRoomsChanged(() => this.listPublic());
       return;
     }
     if (room.hostId === userId) {
@@ -377,6 +411,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
         ...a.payload,
       });
     room.version++;
+    this.publisher.publicRoomsChanged(() => this.listPublic());
     this.publisher.toRoom(
       room.code,
       TrucoServerEvents.STATE,
@@ -399,6 +434,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
       code: room.code,
       version: room.version,
       hostId: room.hostId,
+      isPublic: room.isPublic,
       phase: room.phase,
       lobbyStatus:
         room.phase === 'LOBBY'
