@@ -51,11 +51,12 @@ export function manilhaName(card: TrucoCard): string | null {
 
 export const TRUCO_SEATS = 4;
 export const TRUCO_TARGET_SCORE = 12;
-/** Hand value ladder: base 2, then truco (4), seis (6), dez (10), doze (12). */
-export const TRUCO_BET_LADDER = [2, 4, 6, 10, 12] as const;
+/** Hand value ladder: a plain hand is worth 1, then truco (3), seis (6), nove (9), doze (12). */
+export const TRUCO_BET_LADDER = [1, 3, 6, 9, 12] as const;
 export const TRUCO_TEN_HAND_VALUE = 4;
 export const TRUCO_TEN_HAND_RUN_POINTS = 2;
-export const TRUCO_IRON_HAND_VALUE = 2;
+/** Mão de ferro is a plain hand (no truco): worth the base value. */
+export const TRUCO_IRON_HAND_VALUE = 1;
 export const TRUCO_TEN_THRESHOLD = 10;
 
 export type Seat = 0 | 1 | 2 | 3;
@@ -65,9 +66,9 @@ export const teamOf = (seat: Seat): Team => (seat % 2) as Team;
 export const partnerOf = (seat: Seat): Seat => ((seat + 2) % 4) as Seat;
 
 export const BET_NAMES: Record<number, string> = {
-  4: 'Truco',
+  3: 'Truco',
   6: 'Seis',
-  10: 'Dez',
+  9: 'Nove',
   12: 'Doze',
 };
 

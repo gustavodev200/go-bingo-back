@@ -355,7 +355,7 @@ describe('TrucoGateway (Socket.IO integration)', () => {
       ),
     );
     expect(new Set(requested.map((r) => r.seq)).size).toBe(1);
-    expect(requested[0].value).toBe(4);
+    expect(requested[0].value).toBe(3);
 
     // Own team cannot answer; the opponent runs.
     await expect(
@@ -378,7 +378,7 @@ describe('TrucoGateway (Socket.IO integration)', () => {
         ),
       ),
     );
-    const expected: [number, number] = turn % 2 === 0 ? [2, 0] : [0, 2];
+    const expected: [number, number] = turn % 2 === 0 ? [1, 0] : [0, 1];
     scores.forEach((s) => expect(s.scores).toEqual(expected));
     // The next hand is dealt automatically after the pause.
     await Promise.all(

@@ -277,7 +277,7 @@ describe('TrucoRoomsService — match', () => {
         'truco:private_hand',
         `user:${userId}`,
       );
-    // Somebody asks truco and the other team runs: hand over, 2 tentos.
+    // Somebody asks truco and the other team runs: hand over, 1 tento.
     const asker = turnUser();
     t.service.requestBet(asker);
     const responder = [ana, bia, caio, duda].find(
@@ -286,7 +286,7 @@ describe('TrucoRoomsService — match', () => {
     t.service.respondBet(responder.userId, 'run');
     const s = state(t);
     expect(s.match!.phase).toBe('HAND_OVER');
-    expect(s.scores[s.match!.turn % 2]).toBe(2);
+    expect(s.scores[s.match!.turn % 2]).toBe(1);
     expect(t.publisher.count('truco:score_updated')).toBe(1);
     expect(
       errorCode(() => t.service.playCard(asker, hand(asker).cards[0].id)),

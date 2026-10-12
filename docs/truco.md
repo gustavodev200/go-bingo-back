@@ -36,12 +36,12 @@ features/truco ──socket.io /truco──▶ TrucoGateway        auth JWT, Zod
 - Mão: duas rodadas vencem. Com empate, vence a primeira rodada decidida
   (empata 1ª → 2ª decide; ganha 1ª e empata 2ª/3ª → vence quem ganhou a 1ª).
   Três empates: mão anulada, ninguém pontua.
-- Apostas 2 → 4 (truco) → 6 → 10 → 12, pedidas na própria vez. A dupla adversária aceita,
+- Mão normal vale 1. Apostas 1 → 3 (truco) → 6 → 9 → 12, pedidas na própria vez. A dupla adversária aceita,
   corre ou aumenta; a mesma dupla não aumenta duas vezes seguidas. Correr dá à dupla que
   fez o último pedido o valor anterior da mão.
 - Mão de dez (uma dupla com 10): a dupla vê as cartas do parceiro e decide; jogando vale 4,
   correndo os adversários ganham 2. Sem truco.
-- Mão de ferro (10 a 10): cartas ocultas até serem jogadas (nem o dono vê), vale 2, sem truco.
+- Mão de ferro (10 a 10): cartas ocultas até serem jogadas (nem o dono vê), vale 1 (mão normal), sem truco.
 - Partida até 12 tentos.
 
 Não implementado (variações para o futuro): vira do Paulista, carta encoberta, limite de tempo por jogada.

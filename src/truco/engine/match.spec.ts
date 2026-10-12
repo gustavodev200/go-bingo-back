@@ -144,11 +144,11 @@ describe('TrucoMatch — dealing and turns', () => {
       'truco:hand_ended',
       'truco:score_updated',
     ]);
-    expect(m.scores).toEqual([2, 0]);
+    expect(m.scores).toEqual([1, 0]);
     expect(m.phase).toBe('HAND_OVER');
     expect(m.publicView()!.lastHandResult).toEqual({
       winnerTeam: 0,
-      points: 2,
+      points: 1,
       reason: 'rounds',
     });
     expect(code(() => play(m, 0, c('5', 'clubs')))).toBe('INVALID_STATE');
@@ -197,7 +197,7 @@ describe('TrucoMatch — ties', () => {
     play(m, 2, c('5', 'hearts'));
     const out = play(m, 3, c('Q', 'hearts'));
     expect(events(out)).toContain('truco:hand_ended');
-    expect(m.scores).toEqual([0, 2]);
+    expect(m.scores).toEqual([0, 1]);
   });
 
   it('a tie between partners still wins the round for their team', () => {
@@ -255,7 +255,7 @@ describe('TrucoMatch — bets', () => {
     expect(m.requestBet(0)).toEqual([
       {
         event: 'truco:bet_requested',
-        payload: { seat: 0, team: 0, value: 4 },
+        payload: { seat: 0, team: 0, value: 3 },
       },
     ]);
     expect(m.phase).toBe('AWAITING_BET_RESPONSE');
@@ -263,7 +263,7 @@ describe('TrucoMatch — bets', () => {
     expect(code(() => m.respondBet(2, 'accept'))).toBe('INVALID_MOVE');
     m.respondBet(3, 'accept');
     const view = m.publicView()!;
-    expect(view.value).toBe(4);
+    expect(view.value).toBe(3);
     expect(view.pendingBet).toBeNull();
     expect(view.lastRaiseTeam).toBe(0);
     expect(view.turn).toBe(0);
@@ -290,21 +290,21 @@ describe('TrucoMatch — bets', () => {
     const out = m.respondBet(2, 'run');
     expect(out[0]).toEqual({
       event: 'truco:bet_resolved',
-      payload: { seat: 2, response: 'run', value: 4 },
+      payload: { seat: 2, response: 'run', value: 3 },
     });
-    expect(m.scores).toEqual([0, 4]);
+    expect(m.scores).toEqual([0, 3]);
     expect(m.publicView()!.lastHandResult!.reason).toBe('bet_declined');
   });
 
-  it('runs straight away from truco for 2 tentos', () => {
+  it('runs straight away from truco for 1 tento', () => {
     const m = newMatch();
     m.deal();
     m.requestBet(0);
     m.respondBet(1, 'run');
-    expect(m.scores).toEqual([2, 0]);
+    expect(m.scores).toEqual([1, 0]);
   });
 
-  it('climbs the ladder 4 → 6 → 10 → 12 and stops at 12', () => {
+  it('climbs the ladder 3 → 6 → 9 → 12 and stops at 12', () => {
     const m = newMatch();
     m.deal();
     m.requestBet(0);
@@ -312,11 +312,11 @@ describe('TrucoMatch — bets', () => {
       value: 6,
       team: 1,
     });
-    expect(m.respondBet(2, 'raise')[0].payload).toMatchObject({ value: 10 });
+    expect(m.respondBet(2, 'raise')[0].payload).toMatchObject({ value: 9 });
     expect(m.respondBet(3, 'raise')[0].payload).toMatchObject({ value: 12 });
     expect(code(() => m.respondBet(0, 'raise'))).toBe('INVALID_MOVE');
     // The rejected raise did not change the hand.
-    expect(m.publicView()!.value).toBe(10);
+    expect(m.publicView()!.value).toBe(9);
     m.respondBet(0, 'accept');
     expect(m.publicView()!.value).toBe(12);
     expect(code(() => m.requestBet(0))).toBe('INVALID_MOVE');
@@ -335,7 +335,7 @@ describe('TrucoMatch — bets', () => {
     play(m, 1, c('K', 'hearts'));
     play(m, 2, c('5', 'hearts'));
     play(m, 3, c('Q', 'hearts'));
-    expect(m.scores).toEqual([4, 0]);
+    expect(m.scores).toEqual([3, 0]);
   });
 });
 
@@ -393,7 +393,7 @@ describe('TrucoMatch — mão de dez and mão de ferro', () => {
     expect(m.scores).toEqual([6, 10]);
   });
 
-  it('mão de ferro (10 x 10): cards are blind until played, no truco, worth 2', () => {
+  it('mão de ferro (10 x 10): cards are blind until played, no truco, worth 1', () => {
     const m = newMatch([HAND_A], { scores: [10, 10] });
     expect(m.deal()[0].payload).toMatchObject({ kind: 'iron', tenTeam: null });
     for (const seat of [0, 1, 2, 3] as const) {
@@ -403,7 +403,7 @@ describe('TrucoMatch — mão de dez and mão de ferro', () => {
       expect(hand.partnerCards).toBeNull();
     }
     expect(m.phase).toBe('AWAITING_PLAY');
-    expect(m.publicView()!.value).toBe(2);
+    expect(m.publicView()!.value).toBe(1);
     expect(code(() => m.requestBet(0))).toBe('INVALID_MOVE');
 
     const out = m.play(0, m.privateView(0)!.cards[0].id);
@@ -415,7 +415,7 @@ describe('TrucoMatch — mão de dez and mão de ferro', () => {
   });
 
   it('a mão de ferro win ends the match', () => {
-    const m = newMatch([HAND_A], { scores: [10, 10] });
+    const m = newMatch([HAND_A], { scores: [11, 10] });
     m.deal();
     for (let round = 0; round < 2; round++)
       for (const seat of [0, 1, 2, 3] as const)
