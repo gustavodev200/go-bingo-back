@@ -49,6 +49,7 @@ export const CHARACTER_IDS = [
   'c14',
   'c15',
   'c16',
+  'c17',
 ] as const;
 export const characterSchema = z.enum(CHARACTER_IDS);
 export type CharacterId = z.infer<typeof characterSchema>;
