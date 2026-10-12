@@ -42,6 +42,22 @@ const envSchema = z.object({
     .min(MIN_DRAW_INTERVAL_MS)
     .max(MAX_DRAW_INTERVAL_MS)
     .default(DEFAULT_DRAW_INTERVAL_MS),
+  // Truco: how long a disconnected player's seat stays reserved.
+  TRUCO_RECONNECT_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(600_000)
+    .default(60_000),
+  // Truco: pause between the end of a hand and the next deal.
+  TRUCO_HAND_PAUSE_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(10_000)
+    .default(2_500),
+  // Truco: tables kept in memory at most (one per player).
+  TRUCO_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
 });
 
 export type Env = z.infer<typeof envSchema>;

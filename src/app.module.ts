@@ -15,6 +15,7 @@ import { HealthController } from './health/health.controller';
 import { ProfilesModule } from './profiles/profiles.module';
 import { RankingModule } from './ranking/ranking.module';
 import { RoomsModule } from './rooms/rooms.module';
+import { TrucoModule } from './truco/truco.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { RoomsModule } from './rooms/rooms.module';
     RankingModule,
     ScheduleModule.forRoot(),
     GuestsModule,
+    TrucoModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: HttpThrottlerGuard }],

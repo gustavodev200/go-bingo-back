@@ -28,6 +28,8 @@ const STATUS: Record<ErrorCode, number> = {
   NOT_DRAWN: 409,
   BINGO_INVALID: 409,
   INSUFFICIENT_COINS: 402,
+  NOT_YOUR_TURN: 409,
+  INVALID_MOVE: 409,
   INTERNAL: 500,
 };
 
