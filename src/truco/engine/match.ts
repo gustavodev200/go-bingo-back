@@ -3,10 +3,7 @@ import {
   teamOf,
   TRUCO_BET_LADDER,
   TRUCO_IRON_HAND_VALUE,
-  TRUCO_TARGET_SCORE,
-  TRUCO_TEN_HAND_RUN_POINTS,
-  TRUCO_TEN_HAND_VALUE,
-  TRUCO_TEN_THRESHOLD,
+  TRUCO_RULES,
   type Seat,
   type Team,
   type TrucoBetResponse,
@@ -16,9 +13,11 @@ import {
   type TrucoHandPhase,
   type TrucoHandResult,
   type TrucoMatchView,
+  type TrucoMode,
   type TrucoPendingBet,
   type TrucoPlay,
   type TrucoPrivateHand,
+  type TrucoRules,
   type TrucoServerEventPayloads,
 } from '../../contracts';
 import { DomainError } from '../../core/domain-error';
@@ -98,8 +97,8 @@ export function handWinner(
 }
 
 /**
- * Truco Mineiro rules for one match (first team to 12 tentos).
- * Pure game logic: no transport, no timers. Every mutating method validates
+ * Rules for one match: Truco Mineiro (first to 12, mão de dez, mão de ferro)
+ * or Truco Goiano (first to 15, mão de 14, no mão de ferro). Pure game logic: no transport, no timers. Every mutating method validates
  * the move, throws a DomainError when it is not allowed and returns what happened.
  */
 export class TrucoMatch {
@@ -109,16 +108,19 @@ export class TrucoMatch {
   private handCount = 0;
   private hand: Hand | null = null;
   private readonly deckSource: () => TrucoCard[];
+  readonly rules: TrucoRules;
 
   constructor(
     private readonly random: RandomInt,
     init: {
+      mode?: TrucoMode;
       dealer?: Seat;
       scores?: [number, number];
       /** Test hook: the 12 first cards are dealt 3 per seat (seat 0 first). */
       deck?: () => TrucoCard[];
     } = {},
   ) {
+    this.rules = TRUCO_RULES[init.mode ?? 'mineiro'];
     this.deckSource = init.deck ?? (() => shuffle(newDeck(), this.random));
     this.dealer = init.dealer ?? (random(0, 4) as Seat);
     this.scores = init.scores ? [...init.scores] : [0, 0];
@@ -150,12 +152,16 @@ export class TrucoMatch {
     );
 
     const [a, b] = this.scores;
+    const { tenThreshold, ironHand } = this.rules;
     let kind: TrucoHandKind = 'normal';
     let tenTeam: Team | null = null;
-    if (a >= TRUCO_TEN_THRESHOLD && b >= TRUCO_TEN_THRESHOLD) kind = 'iron';
-    else if (a >= TRUCO_TEN_THRESHOLD || b >= TRUCO_TEN_THRESHOLD) {
+    // Both at the threshold: mineiro plays blind (mão de ferro); goiano plays a
+    // plain hand, nobody sees the partner's cards.
+    if (a >= tenThreshold && b >= tenThreshold) {
+      if (ironHand) kind = 'iron';
+    } else if (a >= tenThreshold || b >= tenThreshold) {
       kind = 'ten';
-      tenTeam = a >= TRUCO_TEN_THRESHOLD ? 0 : 1;
+      tenTeam = a >= tenThreshold ? 0 : 1;
     }
 
     const starter = nextSeat(this.dealer);
@@ -167,7 +173,7 @@ export class TrucoMatch {
       cards,
       value:
         kind === 'ten'
-          ? TRUCO_TEN_HAND_VALUE
+          ? this.rules.tenHandValue
           : kind === 'iron'
             ? TRUCO_IRON_HAND_VALUE
             : TRUCO_BET_LADDER[0],
@@ -220,7 +226,7 @@ export class TrucoMatch {
       throw new DomainError(
         'INVALID_MOVE',
         hand.kind === 'ten'
-          ? 'Não se pede truco na mão de dez'
+          ? `Não se pede truco na ${this.rules.tenHandName.toLowerCase()}`
           : 'Não se pede truco na mão de ferro',
       );
     if (hand.turn !== seat)
@@ -287,7 +293,7 @@ export class TrucoMatch {
     if (teamOf(seat) !== hand.tenTeam)
       throw new DomainError(
         'INVALID_MOVE',
-        'Só a dupla com 10 tentos decide a mão de dez',
+        `Só a dupla com ${this.rules.tenThreshold} tentos decide a ${this.rules.tenHandName.toLowerCase()}`,
       );
     const decided: Announcement = {
       event: 'truco:ten_decided',
@@ -302,7 +308,7 @@ export class TrucoMatch {
       ...this.endHand(
         hand,
         otherTeam(hand.tenTeam),
-        TRUCO_TEN_HAND_RUN_POINTS,
+        this.rules.tenRunPoints,
         'ten_declined',
       ),
     ];
@@ -360,7 +366,7 @@ export class TrucoMatch {
     };
   }
 
-  /** What only `seat` may see: its own cards (blind in the mão de ferro) and, deciding a mão de dez, the partner's. */
+  /** What only `seat` may see: its own cards (blind in the mão de ferro) and, deciding a mão de dez/14, the partner's. */
   privateView(seat: Seat): TrucoPrivateHand | null {
     const hand = this.hand;
     if (!hand) return null;
@@ -420,14 +426,14 @@ export class TrucoMatch {
     hand.result = { winnerTeam: winner, points, reason };
     if (winner !== null)
       this.scores[winner] = Math.min(
-        TRUCO_TARGET_SCORE,
+        this.rules.targetScore,
         this.scores[winner] + points,
       );
     const out: Announcement[] = [
       { event: 'truco:hand_ended', payload: { ...hand.result } },
       { event: 'truco:score_updated', payload: { scores: [...this.scores] } },
     ];
-    if (winner !== null && this.scores[winner] >= TRUCO_TARGET_SCORE) {
+    if (winner !== null && this.scores[winner] >= this.rules.targetScore) {
       this.winnerTeam = winner;
       out.push({
         event: 'truco:match_over',

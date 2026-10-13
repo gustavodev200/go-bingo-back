@@ -39,10 +39,13 @@ features/truco ──socket.io /truco──▶ TrucoGateway        auth JWT, Zod
 - Mão normal vale 1. Apostas 1 → 3 (truco) → 6 → 9 → 12, pedidas na própria vez. A dupla adversária aceita,
   corre ou aumenta; a mesma dupla não aumenta duas vezes seguidas. Correr dá à dupla que
   fez o último pedido o valor anterior da mão.
-- Mão de dez (uma dupla com 10): a dupla vê as cartas do parceiro e decide; jogando vale 4,
-  correndo os adversários ganham 2. Sem truco.
-- Mão de ferro (10 a 10): cartas ocultas até serem jogadas (nem o dono vê), vale 1 (mão normal), sem truco.
-- Partida até 12 tentos.
+- Modo escolhido pelo anfitrião (na criação ou no lobby; `TRUCO_RULES` nos contratos):
+  - **Mineiro** (padrão): partida até 12. Mão de dez (uma dupla com 10): a dupla vê as cartas do
+    parceiro e decide; jogando vale 4, correndo os adversários ganham 2. Sem truco.
+    Mão de ferro (10 a 10): cartas ocultas até serem jogadas (nem o dono vê), vale 1, sem truco.
+  - **Goiano**: partida até 15. Mão de 14 (uma dupla com 14): a dupla vê as cartas do parceiro e
+    decide; jogando vale 3, correndo os adversários ganham só 1. Sem truco. No 14 a 14 não há
+    mão de ferro: mão normal, cada um vê só as próprias cartas.
 
 Não implementado (variações para o futuro): vira do Paulista, carta encoberta, limite de tempo por jogada.
 
@@ -52,10 +55,11 @@ Cliente → servidor (todos com ack `{ ok, data } | { ok: false, error }`):
 
 | Evento | Payload |
 |---|---|
-| `truco:create` | `{ isPublic? }` (padrão pública) → snapshot |
+| `truco:create` | `{ isPublic?, mode? }` (padrão pública, `mineiro`) → snapshot |
 | `truco:watch_rooms` | `{}` → mesas públicas; passa a receber `truco:rooms_updated` |
 | `truco:unwatch_rooms` | `{}` |
 | `truco:set_visibility` | `{ isPublic }` (só o anfitrião) |
+| `truco:set_mode` | `{ mode: 'mineiro' \| 'goiano' }` (só o anfitrião, no lobby; desmarca "pronto") |
 | `truco:join` | `{ code }` → snapshot (também é a reconexão) |
 | `truco:sync` | `{}` → snapshot |
 | `truco:leave` | `{}` |

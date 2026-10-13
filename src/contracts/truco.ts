@@ -30,7 +30,7 @@ export const trucoCardSchema = z.object({
 });
 export type TrucoCard = z.infer<typeof trucoCardSchema>;
 
-/** Fixed manilhas of Truco Mineiro, strongest first. */
+/** Fixed manilhas (Truco Mineiro and Goiano), strongest first. */
 export const MANILHAS = [
   { rank: '4', suit: 'clubs', name: 'Zap' },
   { rank: '7', suit: 'hearts', name: 'Copeta' },
@@ -50,14 +50,49 @@ export function manilhaName(card: TrucoCard): string | null {
 // ---------------------------------------------------------------------------
 
 export const TRUCO_SEATS = 4;
-export const TRUCO_TARGET_SCORE = 12;
 /** Hand value ladder: a plain hand is worth 1, then truco (3), seis (6), nove (9), doze (12). */
 export const TRUCO_BET_LADDER = [1, 3, 6, 9, 12] as const;
-export const TRUCO_TEN_HAND_VALUE = 4;
-export const TRUCO_TEN_HAND_RUN_POINTS = 2;
 /** Mão de ferro is a plain hand (no truco): worth the base value. */
 export const TRUCO_IRON_HAND_VALUE = 1;
-export const TRUCO_TEN_THRESHOLD = 10;
+
+/** Rule set chosen by the host in the lobby. */
+export const TRUCO_MODES = ['mineiro', 'goiano'] as const;
+export type TrucoMode = (typeof TRUCO_MODES)[number];
+
+export interface TrucoRules {
+  name: string;
+  targetScore: number;
+  /** Score that makes the team decide the hand seeing the partner's cards ("mão de dez" / "mão de 14"). */
+  tenThreshold: number;
+  tenHandName: string;
+  /** What the decided hand is worth when the team plays it. */
+  tenHandValue: number;
+  /** What the opponents get when the team at the threshold runs. */
+  tenRunPoints: number;
+  /** Both teams at the threshold: mão de ferro (blind cards) or a plain hand where nobody sees the partner's cards. */
+  ironHand: boolean;
+}
+
+export const TRUCO_RULES: Record<TrucoMode, TrucoRules> = {
+  mineiro: {
+    name: 'Truco Mineiro',
+    targetScore: 12,
+    tenThreshold: 10,
+    tenHandName: 'Mão de dez',
+    tenHandValue: 4,
+    tenRunPoints: 2,
+    ironHand: true,
+  },
+  goiano: {
+    name: 'Truco Goiano',
+    targetScore: 15,
+    tenThreshold: 14,
+    tenHandName: 'Mão de 14',
+    tenHandValue: 3,
+    tenRunPoints: 1,
+    ironHand: false,
+  },
+};
 
 export type Seat = 0 | 1 | 2 | 3;
 /** Team 0 = seats 0 and 2; team 1 = seats 1 and 3 (partners sit across). */
@@ -91,7 +126,7 @@ export const TRUCO_HAND_PHASES = [
 ] as const;
 export type TrucoHandPhase = (typeof TRUCO_HAND_PHASES)[number];
 
-/** normal; ten = mão de dez (one team at 10); iron = mão de ferro (10 x 10, blind cards). */
+/** normal; ten = mão de dez/14 (one team at the threshold); iron = mão de ferro (mineiro 10 x 10, blind cards). */
 export type TrucoHandKind = 'normal' | 'ten' | 'iron';
 
 export type TrucoHandEndReason =
@@ -140,7 +175,7 @@ export interface TrucoMatchView {
   dealer: Seat;
   phase: TrucoHandPhase;
   kind: TrucoHandKind;
-  /** Team at 10 deciding the mão de dez; null otherwise. */
+  /** Team at the threshold deciding the mão de dez/14; null otherwise. */
   tenTeam: Team | null;
   /** Current accepted hand value. */
   value: number;
@@ -166,6 +201,7 @@ export interface TrucoRoomState {
   hostId: string;
   /** Public tables are listed in the truco lobby; private ones are joined by code only. */
   isPublic: boolean;
+  mode: TrucoMode;
   phase: TrucoRoomPhase;
   lobbyStatus: TrucoLobbyStatus | null;
   seats: (TrucoSeatPlayer | null)[];
@@ -184,7 +220,7 @@ export interface TrucoHandCard {
 export interface TrucoPrivateHand {
   handNumber: number;
   cards: TrucoHandCard[];
-  /** Partner cards, shown only to the team at 10 while it decides the mão de dez. */
+  /** Partner cards, shown only to the team at the threshold while it decides the mão de dez/14. */
   partnerCards: TrucoCard[] | null;
 }
 
@@ -194,6 +230,7 @@ export interface TrucoPublicRoom {
   hostNickname: string;
   hostCharacter: string | null;
   players: number;
+  mode: TrucoMode;
 }
 
 /** Room for the lobby watchers channel (inside the /truco namespace). */
@@ -231,6 +268,7 @@ export const TrucoClientEvents = {
   WATCH_ROOMS: 'truco:watch_rooms',
   UNWATCH_ROOMS: 'truco:unwatch_rooms',
   SET_VISIBILITY: 'truco:set_visibility',
+  SET_MODE: 'truco:set_mode',
   JOIN: 'truco:join',
   LEAVE: 'truco:leave',
   TAKE_SEAT: 'truco:take_seat',
@@ -271,11 +309,15 @@ export const TrucoServerEvents = {
 const actionIdSchema = z.string().min(8).max(64);
 
 export const trucoEmptySchema = z.object({}).strict();
-/** Absent isPublic (older clients) = public. */
+/** Absent isPublic (older clients) = public; absent mode = mineiro. */
 export const trucoCreateSchema = z
-  .object({ isPublic: z.boolean().default(true) })
+  .object({
+    isPublic: z.boolean().default(true),
+    mode: z.enum(TRUCO_MODES).default('mineiro'),
+  })
   .strict();
 export const trucoVisibilitySchema = z.object({ isPublic: z.boolean() });
+export const trucoModeSchema = z.object({ mode: z.enum(TRUCO_MODES) });
 export const trucoJoinSchema = z.object({ code: roomCodeSchema });
 export const trucoTakeSeatSchema = z.object({
   seat: z.number().int().min(0).max(3),
@@ -368,6 +410,7 @@ export interface TrucoClientAckData {
   'truco:watch_rooms': TrucoPublicRoom[];
   'truco:unwatch_rooms': null;
   'truco:set_visibility': null;
+  'truco:set_mode': null;
   'truco:join': TrucoSnapshot;
   'truco:leave': null;
   'truco:take_seat': null;

@@ -9,6 +9,7 @@ import {
   type TrucoGesture,
   type TrucoLeftReason,
   type TrucoMatchResult,
+  type TrucoMode,
   type TrucoPublicRoom,
   type TrucoRoomPhase,
   type TrucoRoomState,
@@ -51,6 +52,7 @@ interface Room {
   code: string;
   hostId: string;
   isPublic: boolean;
+  mode: TrucoMode;
   phase: TrucoRoomPhase;
   seats: (SeatState | null)[];
   match: TrucoMatch | null;
@@ -98,6 +100,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
     player: TrucoPlayer,
     socketId: string,
     isPublic = true,
+    mode: TrucoMode = 'mineiro',
   ): TrucoSnapshot {
     this.assertFree(player.userId);
     if (this.rooms.size >= this.config.maxRooms)
@@ -112,6 +115,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
       code,
       hostId: player.userId,
       isPublic,
+      mode,
       phase: 'LOBBY',
       seats: Array.from({ length: TRUCO_SEATS }, () => null),
       match: null,
@@ -178,6 +182,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
         hostNickname: host.nickname,
         hostCharacter: host.character,
         players,
+        mode: room.mode,
       });
     }
     return out.sort((a, b) => b.players - a.players);
@@ -188,6 +193,17 @@ export class TrucoRoomsService implements OnModuleDestroy {
     if (room.hostId !== userId)
       throw new DomainError('NOT_HOST', 'Só o anfitrião muda a visibilidade');
     room.isPublic = isPublic;
+    this.publish(room, []);
+  }
+
+  /** Rule set for the next match; only in the lobby (a running match keeps its rules). */
+  setMode(userId: string, mode: TrucoMode): void {
+    const room = this.requireRoom(userId);
+    this.requirePhase(room, 'LOBBY');
+    if (room.hostId !== userId)
+      throw new DomainError('NOT_HOST', 'Só o anfitrião escolhe o modo');
+    room.mode = mode;
+    for (const s of room.seats) if (s) s.ready = false;
     this.publish(room, []);
   }
 
@@ -258,7 +274,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
       throw new DomainError('INVALID_STATE', 'Espere todo mundo se reconectar');
     if (seated.some((s) => !s.ready))
       throw new DomainError('INVALID_STATE', 'Todos precisam estar prontos');
-    room.match = new TrucoMatch(this.random);
+    room.match = new TrucoMatch(this.random, { mode: room.mode });
     room.phase = 'PLAYING';
     room.result = null;
     this.publish(room, [
@@ -435,6 +451,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
       version: room.version,
       hostId: room.hostId,
       isPublic: room.isPublic,
+      mode: room.mode,
       phase: room.phase,
       lobbyStatus:
         room.phase === 'LOBBY'

@@ -495,6 +495,33 @@ describe('TrucoRoomsService — presence', () => {
   });
 });
 
+describe('TrucoRoomsService — mode', () => {
+  it('creates mineiro by default and goiano on request', () => {
+    const t = setup();
+    expect(t.service.create(ana, 's1').state.mode).toBe('mineiro');
+    expect(t.service.create(bia, 's2', true, 'goiano').state.mode).toBe(
+      'goiano',
+    );
+  });
+
+  it('lets only the host switch mode in the lobby and resets ready', () => {
+    const t = setup();
+    full(t);
+    t.service.setReady(bia.userId, true);
+    expect(errorCode(() => t.service.setMode(bia.userId, 'goiano'))).toBe(
+      'NOT_HOST',
+    );
+    t.service.setMode(ana.userId, 'goiano');
+    expect(state(t).mode).toBe('goiano');
+    expect(state(t).seats.every((s) => !s!.ready)).toBe(true);
+    for (const p of [ana, bia, caio, duda]) t.service.setReady(p.userId, true);
+    t.service.start(ana.userId);
+    expect(errorCode(() => t.service.setMode(ana.userId, 'mineiro'))).toBe(
+      'INVALID_STATE',
+    );
+  });
+});
+
 describe('TrucoRoomsService — public tables', () => {
   it('creates public tables by default and private ones on request', () => {
     const t = setup();
@@ -509,8 +536,20 @@ describe('TrucoRoomsService — public tables', () => {
     const pair = t.service.create(caio, 's3').state.code;
     t.service.join(pair, duda, 's4');
     expect(t.service.listPublic()).toEqual([
-      { code: pair, hostNickname: 'Caio', hostCharacter: null, players: 2 },
-      { code: lone, hostNickname: 'Ana', hostCharacter: null, players: 1 },
+      {
+        code: pair,
+        hostNickname: 'Caio',
+        hostCharacter: null,
+        players: 2,
+        mode: 'mineiro',
+      },
+      {
+        code: lone,
+        hostNickname: 'Ana',
+        hostCharacter: null,
+        players: 1,
+        mode: 'mineiro',
+      },
     ]);
     expect(t.publisher.publicChanges).toBeGreaterThan(0);
     expect(t.publisher.publicList()).toHaveLength(2);

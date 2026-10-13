@@ -18,6 +18,7 @@ import {
   trucoCreateSchema,
   trucoEmptySchema,
   trucoJoinSchema,
+  trucoModeSchema,
   trucoPlayCardSchema,
   trucoReadySchema,
   trucoRequestBetSchema,
@@ -119,11 +120,12 @@ export class TrucoGateway
       'create',
       trucoCreateSchema,
       body,
-      async (_, { isPublic }) => {
+      async (_, { isPublic, mode }) => {
         const snapshot = this.tables.create(
           this.player(socket),
           socket.id,
           isPublic,
+          mode,
         );
         await socket.join(roomChannel(snapshot.state.code));
         this.logger.log({
@@ -170,6 +172,23 @@ export class TrucoGateway
       body,
       (user, { isPublic }) => {
         this.tables.setVisibility(user.id, isPublic);
+        return Promise.resolve(null);
+      },
+    );
+  }
+
+  @SubscribeMessage(TrucoClientEvents.SET_MODE)
+  onSetMode(
+    @ConnectedSocket() socket: TrucoSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      trucoModeSchema,
+      body,
+      (user, { mode }) => {
+        this.tables.setMode(user.id, mode);
         return Promise.resolve(null);
       },
     );

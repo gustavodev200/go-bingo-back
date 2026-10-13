@@ -1,4 +1,4 @@
-import type { Seat, TrucoCard } from '../../contracts';
+import type { Seat, TrucoCard, TrucoMode } from '../../contracts';
 import { DomainError } from '../../core/domain-error';
 import { sameCard } from './cards';
 import { handWinner, TrucoMatch, type Announcement } from './match';
@@ -18,10 +18,11 @@ const HAND_A: TrucoCard[][] = [
 
 function newMatch(
   deals: TrucoCard[][][] = [HAND_A],
-  init: { scores?: [number, number]; dealer?: Seat } = {},
+  init: { scores?: [number, number]; dealer?: Seat; mode?: TrucoMode } = {},
 ) {
   let i = 0;
   return new TrucoMatch(() => 0, {
+    mode: init.mode,
     dealer: init.dealer ?? 3,
     scores: init.scores,
     deck: () => deals[Math.min(i++, deals.length - 1)].flat(),
@@ -422,6 +423,81 @@ describe('TrucoMatch — mão de dez and mão de ferro', () => {
         m.play(seat, m.privateView(seat)!.cards[0].id);
     expect(m.winner).toBe(0);
     expect(m.scores).toEqual([12, 10]);
+  });
+});
+
+describe('TrucoMatch — Truco Goiano', () => {
+  const winTwoRounds = (m: TrucoMatch) => {
+    play(m, 0, c('3', 'clubs'));
+    play(m, 1, c('K', 'clubs'));
+    play(m, 2, c('4', 'hearts'));
+    play(m, 3, c('Q', 'clubs'));
+    play(m, 0, c('2', 'clubs'));
+    play(m, 1, c('K', 'hearts'));
+    play(m, 2, c('5', 'hearts'));
+    return play(m, 3, c('Q', 'hearts'));
+  };
+
+  it('plays a normal hand at 10 and 13 (no mão de dez)', () => {
+    for (const scores of [
+      [10, 4],
+      [13, 13],
+    ] as [number, number][]) {
+      const m = newMatch([HAND_A], { scores, mode: 'goiano' });
+      expect(m.deal()[0].payload).toMatchObject({ kind: 'normal' });
+    }
+  });
+
+  it('a 12-point win does not end the match before 15', () => {
+    const m = newMatch([HAND_A], { scores: [2, 0], mode: 'goiano' });
+    m.deal();
+    m.requestBet(0);
+    m.respondBet(1, 'raise');
+    m.respondBet(0, 'raise');
+    m.respondBet(1, 'raise');
+    m.respondBet(0, 'accept');
+    expect(m.publicView()!.value).toBe(12);
+    winTwoRounds(m);
+    expect(m.scores).toEqual([14, 0]);
+    expect(m.winner).toBeNull();
+  });
+
+  it('mão de 14: the team at 14 sees the partner cards, plays for 3 and wins at 15', () => {
+    const m = newMatch([HAND_A], { scores: [14, 6], mode: 'goiano' });
+    expect(m.deal()[0].payload).toMatchObject({ kind: 'ten', tenTeam: 0 });
+    expect(m.privateView(0)!.partnerCards).toEqual(HAND_A[2]);
+    expect(m.privateView(1)!.partnerCards).toBeNull();
+    m.decideTen(0, true);
+    expect(m.publicView()!.value).toBe(3);
+    expect(code(() => m.requestBet(0))).toBe('INVALID_MOVE');
+    winTwoRounds(m);
+    expect(m.scores).toEqual([15, 6]);
+    expect(m.winner).toBe(0);
+  });
+
+  it('mão de 14 declined gives only 1 tento to the opponents', () => {
+    const m = newMatch([HAND_A], { scores: [6, 14], mode: 'goiano' });
+    m.deal();
+    m.decideTen(1, false);
+    expect(m.scores).toEqual([7, 14]);
+  });
+
+  it('14 x 14: no mão de ferro, everyone sees only their own cards', () => {
+    const m = newMatch([HAND_A], { scores: [14, 14], mode: 'goiano' });
+    expect(m.deal()[0].payload).toEqual({
+      handNumber: 1,
+      kind: 'normal',
+      tenTeam: null,
+    });
+    expect(m.phase).toBe('AWAITING_PLAY');
+    for (const seat of [0, 1, 2, 3] as const) {
+      const hand = m.privateView(seat)!;
+      expect(hand.cards.every((h) => h.card !== null)).toBe(true);
+      expect(hand.partnerCards).toBeNull();
+    }
+    winTwoRounds(m);
+    expect(m.scores).toEqual([15, 14]);
+    expect(m.winner).toBe(0);
   });
 });
 
