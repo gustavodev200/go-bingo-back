@@ -58,6 +58,19 @@ const envSchema = z.object({
     .default(2_500),
   // Truco: tables kept in memory at most (one per player).
   TRUCO_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
+  // UNO: how long a disconnected player's seat stays reserved.
+  UNO_RECONNECT_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(600_000)
+    .default(60_000),
+  // UNO: time to act on a turn before it is played automatically.
+  UNO_TURN_MS: z.coerce.number().int().min(5_000).max(120_000).default(25_000),
+  // UNO: pause between the end of a round and the next deal.
+  UNO_ROUND_PAUSE_MS: z.coerce.number().int().min(0).max(15_000).default(4_000),
+  // UNO: tables kept in memory at most (one per player).
+  UNO_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
 });
 
 export type Env = z.infer<typeof envSchema>;

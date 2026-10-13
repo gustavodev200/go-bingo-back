@@ -1,0 +1,82 @@
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import type { Namespace } from 'socket.io';
+import {
+  roomChannel,
+  UNO_PUBLIC_ROOMS_CHANNEL,
+  UnoServerEvents,
+  userChannel,
+  type UnoPublicRoom,
+  type UnoServerEventName,
+  type UnoServerEventPayloads,
+} from '../contracts';
+
+/** Where the rooms service sends things; the Socket.IO implementation lives below. */
+export interface UnoPublisher {
+  toRoom<E extends UnoServerEventName>(
+    code: string,
+    event: E,
+    payload: UnoServerEventPayloads[E],
+  ): void;
+  toUser<E extends UnoServerEventName>(
+    userId: string,
+    event: E,
+    payload: UnoServerEventPayloads[E],
+  ): void;
+  /** Removes every socket of the user from the room broadcast channel. */
+  removeFromRoom(userId: string, code: string): void;
+  /** Something that may change the public list happened; `list` is read when it is sent. */
+  publicRoomsChanged(list: () => UnoPublicRoom[]): void;
+}
+
+const PUBLIC_DEBOUNCE_MS = 300;
+
+export const UNO_PUBLISHER = Symbol('UNO_PUBLISHER');
+
+/**
+ * Channels live inside the /uno namespace, so `room:CODE` and `user:ID`
+ * never collide with the bingo ones in /game.
+ */
+@Injectable()
+export class SocketUnoPublisher implements UnoPublisher, OnModuleDestroy {
+  private server?: Namespace;
+  private publicTimer?: NodeJS.Timeout;
+
+  attach(server: Namespace): void {
+    this.server = server;
+  }
+
+  toRoom<E extends UnoServerEventName>(
+    code: string,
+    event: E,
+    payload: UnoServerEventPayloads[E],
+  ): void {
+    this.server?.to(roomChannel(code)).emit(event, payload);
+  }
+
+  toUser<E extends UnoServerEventName>(
+    userId: string,
+    event: E,
+    payload: UnoServerEventPayloads[E],
+  ): void {
+    this.server?.to(userChannel(userId)).emit(event, payload);
+  }
+
+  removeFromRoom(userId: string, code: string): void {
+    this.server?.in(userChannel(userId)).socketsLeave(roomChannel(code));
+  }
+
+  /** Coalesces bursts (every card played publishes) into one list per window. */
+  publicRoomsChanged(list: () => UnoPublicRoom[]): void {
+    if (this.publicTimer) return;
+    this.publicTimer = setTimeout(() => {
+      this.publicTimer = undefined;
+      this.server
+        ?.to(UNO_PUBLIC_ROOMS_CHANNEL)
+        .emit(UnoServerEvents.ROOMS_UPDATED, { rooms: list() });
+    }, PUBLIC_DEBOUNCE_MS);
+  }
+
+  onModuleDestroy(): void {
+    clearTimeout(this.publicTimer);
+  }
+}
