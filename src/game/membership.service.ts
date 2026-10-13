@@ -59,6 +59,14 @@ export class MembershipService {
     throw new DomainError('ROOM_FULL', 'Sala cheia');
   }
 
+  async isMember(code: string, userId: string): Promise<boolean> {
+    const member = await this.prisma.roomMember.findFirst({
+      where: { userId, room: { code } },
+      select: { userId: true },
+    });
+    return member !== null;
+  }
+
   leave(code: string, userId: string): Promise<LeaveResult> {
     return this.prisma.$transaction(async (tx) => {
       // Lock + leitura da sala numa única instrução: isso serializa leaves/

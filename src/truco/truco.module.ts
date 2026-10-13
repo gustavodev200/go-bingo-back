@@ -27,5 +27,6 @@ import { TrucoGateway } from './truco.gateway';
     TrucoRoomsService,
     TrucoGateway,
   ],
+  exports: [TrucoRoomsService],
 })
 export class TrucoModule {}

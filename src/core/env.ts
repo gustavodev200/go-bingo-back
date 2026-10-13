@@ -3,6 +3,7 @@ import {
   DEFAULT_DRAW_INTERVAL_MS,
   MAX_DRAW_INTERVAL_MS,
   MIN_DRAW_INTERVAL_MS,
+  voiceIceServerSchema,
 } from '../contracts';
 
 // Templates de secrets costumam deixar a variável vazia; vazio = ausente.
@@ -71,6 +72,23 @@ const envSchema = z.object({
   UNO_ROUND_PAUSE_MS: z.coerce.number().int().min(0).max(15_000).default(4_000),
   // UNO: tables kept in memory at most (one per player).
   UNO_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
+  // Voice chat: ICE servers handed to the browsers, as JSON (e.g. a TURN
+  // server for players behind strict NATs). Absent = public STUN only.
+  VOICE_ICE_SERVERS: z.preprocess(
+    emptyToUndefined,
+    z
+      .string()
+      .transform((v, ctx) => {
+        try {
+          return JSON.parse(v) as unknown;
+        } catch {
+          ctx.addIssue({ code: 'custom', message: 'JSON inválido' });
+          return z.NEVER;
+        }
+      })
+      .pipe(z.array(voiceIceServerSchema).min(1))
+      .optional(),
+  ),
 });
 
 export type Env = z.infer<typeof envSchema>;

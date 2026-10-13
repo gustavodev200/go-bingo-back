@@ -28,5 +28,6 @@ import { UnoGateway } from './uno.gateway';
     UnoRoomsService,
     UnoGateway,
   ],
+  exports: [UnoRoomsService],
 })
 export class UnoModule {}

@@ -25,6 +25,7 @@ function makePrisma() {
       create: jest.fn(),
       deleteMany: jest.fn(),
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
     },
     card: {
@@ -218,6 +219,24 @@ describe('MembershipService.join', () => {
     );
 
     await expect(service.join('ABC123', 'u1')).rejects.toBe(boom);
+  });
+});
+
+describe('MembershipService.isMember', () => {
+  it('looks the member up by room code', async () => {
+    const prisma = makePrisma();
+    const service = new MembershipService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+    prisma.roomMember.findFirst.mockResolvedValueOnce({ userId: 'u1' });
+    await expect(service.isMember('ABCDEF', 'u1')).resolves.toBe(true);
+    expect(prisma.roomMember.findFirst).toHaveBeenCalledWith({
+      where: { userId: 'u1', room: { code: 'ABCDEF' } },
+      select: { userId: true },
+    });
+    prisma.roomMember.findFirst.mockResolvedValueOnce(null);
+    await expect(service.isMember('ABCDEF', 'u2')).resolves.toBe(false);
   });
 });
 

@@ -17,6 +17,7 @@ import { RankingModule } from './ranking/ranking.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { TrucoModule } from './truco/truco.module';
 import { UnoModule } from './uno/uno.module';
+import { VoiceModule } from './voice/voice.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { UnoModule } from './uno/uno.module';
     GuestsModule,
     TrucoModule,
     UnoModule,
+    VoiceModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: HttpThrottlerGuard }],
