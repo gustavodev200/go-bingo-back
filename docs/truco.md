@@ -39,6 +39,9 @@ features/truco ──socket.io /truco──▶ TrucoGateway        auth JWT, Zod
 - Mão normal vale 1. Apostas 1 → 3 (truco) → 6 → 9 → 12, pedidas na própria vez. A dupla adversária aceita,
   corre ou aumenta; a mesma dupla não aumenta duas vezes seguidas. Correr dá à dupla que
   fez o último pedido o valor anterior da mão.
+- Resposta à aposta é **votação da dupla adversária**: cada um vota aceitar, correr ou aumentar e vê o voto
+  do parceiro (os adversários só sabem quantos votaram). Decide quando os dois votam; se discordarem vale o
+  voto mais ousado (aumentar > aceitar > correr). Parceiro desconectado: o voto de quem ficou decide sozinho.
 - Modo escolhido pelo anfitrião (na criação ou no lobby; `TRUCO_RULES` nos contratos):
   - **Mineiro** (padrão): partida até 12. Mão de dez (uma dupla com 10): a dupla vê as cartas do
     parceiro e decide; jogando vale 4, correndo os adversários ganham 2. Sem truco.
@@ -76,7 +79,7 @@ Cliente → servidor (todos com ack `{ ok, data } | { ok: false, error }`):
 Servidor → cliente: `truco:state` (estado público, com `version`), `truco:private_hand`
 (só para o dono), `truco:player_joined`, `truco:player_left`, `truco:player_disconnected`,
 `truco:player_reconnected`, `truco:match_started`, `truco:hand_dealt`, `truco:card_played`,
-`truco:round_ended`, `truco:hand_ended`, `truco:bet_requested`, `truco:bet_resolved`,
+`truco:round_ended`, `truco:hand_ended`, `truco:bet_requested`, `truco:bet_voted`, `truco:bet_resolved`,
 `truco:ten_decided`, `truco:score_updated`, `truco:match_over`, `truco:signal_received`
 (só o parceiro), `truco:gestured` (só os adversários, sem o gesto), `truco:room_closed`,
 `truco:rooms_updated` (lista de mesas públicas, só para quem está no lobby observando).

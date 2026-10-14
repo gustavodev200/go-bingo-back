@@ -1,4 +1,9 @@
-import type { Seat, TrucoCard, TrucoMode } from '../../contracts';
+import type {
+  Seat,
+  TrucoBetResponse,
+  TrucoCard,
+  TrucoMode,
+} from '../../contracts';
 import { DomainError } from '../../core/domain-error';
 import { sameCard } from './cards';
 import { handWinner, TrucoMatch, type Announcement } from './match';
@@ -48,6 +53,12 @@ function code(fn: () => unknown): string {
 }
 
 const events = (out: Announcement[]) => out.map((a) => a.event);
+
+/** Both players of the responding team vote the same (the bet resolves on the second vote). */
+function vote(m: TrucoMatch, seat: Seat, response: TrucoBetResponse) {
+  m.respondBet(seat, response);
+  return m.respondBet(((seat + 2) % 4) as Seat, response);
+}
 
 describe('handWinner', () => {
   it.each([
@@ -160,7 +171,7 @@ describe('TrucoMatch — dealing and turns', () => {
     m.deal();
     expect(code(() => m.deal())).toBe('INVALID_STATE');
     m.requestBet(0);
-    m.respondBet(1, 'run');
+    vote(m, 1, 'run');
     m.deal();
     expect(m.publicView()!.dealer).toBe(0);
     expect(m.publicView()!.turn).toBe(1);
@@ -261,8 +272,8 @@ describe('TrucoMatch — bets', () => {
     ]);
     expect(m.phase).toBe('AWAITING_BET_RESPONSE');
     expect(code(() => play(m, 0, c('3', 'clubs')))).toBe('INVALID_STATE');
-    expect(code(() => m.respondBet(2, 'accept'))).toBe('INVALID_MOVE');
-    m.respondBet(3, 'accept');
+    expect(code(() => vote(m, 2, 'accept'))).toBe('INVALID_MOVE');
+    vote(m, 3, 'accept');
     const view = m.publicView()!;
     expect(view.value).toBe(3);
     expect(view.pendingBet).toBeNull();
@@ -275,7 +286,7 @@ describe('TrucoMatch — bets', () => {
     m.deal();
     expect(code(() => m.requestBet(1))).toBe('NOT_YOUR_TURN');
     m.requestBet(0);
-    m.respondBet(1, 'accept');
+    vote(m, 1, 'accept');
     play(m, 0, c('5', 'clubs'));
     play(m, 1, c('6', 'clubs'));
     expect(code(() => m.requestBet(2))).toBe('INVALID_MOVE');
@@ -287,8 +298,8 @@ describe('TrucoMatch — bets', () => {
     const m = newMatch();
     m.deal();
     m.requestBet(0);
-    m.respondBet(1, 'raise'); // team 1 asks for 6, accepting 4
-    const out = m.respondBet(2, 'run');
+    vote(m, 1, 'raise'); // team 1 asks for 6, accepting 4
+    const out = vote(m, 2, 'run');
     expect(out[0]).toEqual({
       event: 'truco:bet_resolved',
       payload: { seat: 2, response: 'run', value: 3 },
@@ -301,7 +312,7 @@ describe('TrucoMatch — bets', () => {
     const m = newMatch();
     m.deal();
     m.requestBet(0);
-    m.respondBet(1, 'run');
+    vote(m, 1, 'run');
     expect(m.scores).toEqual([1, 0]);
   });
 
@@ -309,16 +320,16 @@ describe('TrucoMatch — bets', () => {
     const m = newMatch();
     m.deal();
     m.requestBet(0);
-    expect(m.respondBet(1, 'raise')[0].payload).toMatchObject({
+    expect(vote(m, 1, 'raise')[0].payload).toMatchObject({
       value: 6,
       team: 1,
     });
-    expect(m.respondBet(2, 'raise')[0].payload).toMatchObject({ value: 9 });
-    expect(m.respondBet(3, 'raise')[0].payload).toMatchObject({ value: 12 });
-    expect(code(() => m.respondBet(0, 'raise'))).toBe('INVALID_MOVE');
+    expect(vote(m, 2, 'raise')[0].payload).toMatchObject({ value: 9 });
+    expect(vote(m, 3, 'raise')[0].payload).toMatchObject({ value: 12 });
+    expect(code(() => vote(m, 0, 'raise'))).toBe('INVALID_MOVE');
     // The rejected raise did not change the hand.
     expect(m.publicView()!.value).toBe(9);
-    m.respondBet(0, 'accept');
+    vote(m, 0, 'accept');
     expect(m.publicView()!.value).toBe(12);
     expect(code(() => m.requestBet(0))).toBe('INVALID_MOVE');
   });
@@ -327,7 +338,7 @@ describe('TrucoMatch — bets', () => {
     const m = newMatch();
     m.deal();
     m.requestBet(0);
-    m.respondBet(1, 'accept');
+    vote(m, 1, 'accept');
     play(m, 0, c('3', 'clubs'));
     play(m, 1, c('K', 'clubs'));
     play(m, 2, c('4', 'hearts'));
@@ -452,10 +463,10 @@ describe('TrucoMatch — Truco Goiano', () => {
     const m = newMatch([HAND_A], { scores: [2, 0], mode: 'goiano' });
     m.deal();
     m.requestBet(0);
-    m.respondBet(1, 'raise');
-    m.respondBet(0, 'raise');
-    m.respondBet(1, 'raise');
-    m.respondBet(0, 'accept');
+    vote(m, 1, 'raise');
+    vote(m, 0, 'raise');
+    vote(m, 1, 'raise');
+    vote(m, 0, 'accept');
     expect(m.publicView()!.value).toBe(12);
     winTwoRounds(m);
     expect(m.scores).toEqual([14, 0]);
@@ -522,5 +533,85 @@ describe('TrucoMatch — abandon', () => {
     expect(m.privateView(0)).toBeNull();
     expect(m.phase).toBe('DEALING');
     expect(code(() => m.requestBet(0))).toBe('INVALID_STATE');
+  });
+});
+
+describe('TrucoMatch — the responding team votes', () => {
+  it('waits for both votes and shows each vote only to the partner', () => {
+    const m = newMatch();
+    m.deal();
+    m.requestBet(0);
+    expect(m.respondBet(1, 'accept')).toEqual([
+      { event: 'truco:bet_voted', payload: { seat: 1, team: 1 } },
+    ]);
+    expect(m.phase).toBe('AWAITING_BET_RESPONSE');
+    expect(m.publicView()!.pendingBet).toMatchObject({ value: 3, votes: 1 });
+    expect(m.privateView(1)!.betVotes).toEqual({
+      mine: 'accept',
+      partner: null,
+    });
+    expect(m.privateView(3)!.betVotes).toEqual({
+      mine: null,
+      partner: 'accept',
+    });
+    expect(m.privateView(0)!.betVotes).toBeNull();
+    expect(JSON.stringify(m.publicView())).not.toContain('accept');
+    m.respondBet(3, 'accept');
+    expect(m.publicView()!.value).toBe(3);
+    expect(m.privateView(1)!.betVotes).toBeNull();
+  });
+
+  it('lets a voter change their mind before the partner votes', () => {
+    const m = newMatch();
+    m.deal();
+    m.requestBet(0);
+    m.respondBet(1, 'run');
+    m.respondBet(1, 'accept');
+    expect(m.privateView(3)!.betVotes).toEqual({
+      mine: null,
+      partner: 'accept',
+    });
+  });
+
+  it('goes with the boldest vote when the partners disagree', () => {
+    const accept = newMatch();
+    accept.deal();
+    accept.requestBet(0);
+    accept.respondBet(1, 'run');
+    expect(accept.respondBet(3, 'accept')[0]).toEqual({
+      event: 'truco:bet_resolved',
+      payload: { seat: 3, response: 'accept', value: 3 },
+    });
+    const raise = newMatch();
+    raise.deal();
+    raise.requestBet(0);
+    raise.respondBet(3, 'raise');
+    expect(raise.respondBet(1, 'run')[0]).toEqual({
+      event: 'truco:bet_requested',
+      payload: { seat: 3, team: 1, value: 6 },
+    });
+    expect(raise.scores).toEqual([0, 0]);
+  });
+
+  it('decides with a single vote when the partner is away', () => {
+    const m = newMatch();
+    m.deal();
+    m.requestBet(0);
+    m.respondBet(1, 'run', true);
+    expect(m.scores).toEqual([1, 0]);
+  });
+
+  it('resolves with the vote already cast when the partner drops', () => {
+    const m = newMatch();
+    m.deal();
+    m.requestBet(0);
+    expect(m.resolveBetVotes(3)).toEqual([]);
+    m.respondBet(1, 'accept');
+    expect(m.resolveBetVotes(1)).toEqual([]);
+    expect(m.resolveBetVotes(3)[0]).toMatchObject({
+      event: 'truco:bet_resolved',
+      payload: { response: 'accept' },
+    });
+    expect(m.phase).toBe('AWAITING_PLAY');
   });
 });

@@ -162,6 +162,14 @@ export interface TrucoPendingBet {
   value: number;
   requestedBy: Seat;
   team: Team;
+  /** How many of the two responders already voted (which vote stays private to their team). */
+  votes: number;
+}
+
+/** The responding team votes; each player sees their own vote and the partner's. */
+export interface TrucoBetVotes {
+  mine: TrucoBetResponse | null;
+  partner: TrucoBetResponse | null;
 }
 
 export interface TrucoHandResult {
@@ -222,6 +230,8 @@ export interface TrucoPrivateHand {
   cards: TrucoHandCard[];
   /** Partner cards, shown only to the team at the threshold while it decides the mão de dez/14. */
   partnerCards: TrucoCard[] | null;
+  /** While my team votes on a bet: my vote and my partner's; null otherwise. */
+  betVotes: TrucoBetVotes | null;
 }
 
 /** A public table still taking players, as listed in the truco lobby. */
@@ -296,6 +306,7 @@ export const TrucoServerEvents = {
   ROUND_ENDED: 'truco:round_ended',
   HAND_ENDED: 'truco:hand_ended',
   BET_REQUESTED: 'truco:bet_requested',
+  BET_VOTED: 'truco:bet_voted',
   BET_RESOLVED: 'truco:bet_resolved',
   TEN_DECIDED: 'truco:ten_decided',
   SCORE_UPDATED: 'truco:score_updated',
@@ -389,6 +400,8 @@ export interface TrucoServerEventPayloads {
     team: Team;
     value: number;
   };
+  /** A responder voted (the vote itself goes only to their team, in the private hand). */
+  'truco:bet_voted': { seq: number; seat: Seat; team: Team };
   'truco:bet_resolved': {
     seq: number;
     seat: Seat;

@@ -112,6 +112,9 @@ function started(t: ReturnType<typeof setup>) {
   return code;
 }
 
+/** Socket id each player joined with in `full`. */
+const socketOf = (p: TrucoPlayer) => (p === ana ? 's-ana' : `s-${p.nickname}`);
+
 function errorCode(fn: () => unknown): string {
   try {
     fn();
@@ -283,7 +286,12 @@ describe('TrucoRoomsService — match', () => {
     const responder = [ana, bia, caio, duda].find(
       (p, i) => i % 2 !== state(t).match!.turn % 2,
     )!;
+    const team = [ana, bia, caio, duda].filter(
+      (_, i) => i % 2 !== state(t).match!.turn % 2,
+    );
     t.service.respondBet(responder.userId, 'run');
+    expect(state(t).match!.phase).toBe('AWAITING_BET_RESPONSE');
+    t.service.respondBet(team.find((p) => p !== responder)!.userId, 'run');
     const s = state(t);
     expect(s.match!.phase).toBe('HAND_OVER');
     expect(s.scores[s.match!.turn % 2]).toBe(1);
@@ -338,6 +346,7 @@ describe('TrucoRoomsService — match', () => {
       if (m.kind === 'normal') {
         t.service.requestBet(all[m.turn].userId);
         t.service.respondBet(all[(m.turn + 1) % 4].userId, 'run');
+        t.service.respondBet(all[(m.turn + 3) % 4].userId, 'run');
       } else {
         const hand = t.publisher.last<TrucoPrivateHand>(
           'truco:private_hand',
@@ -582,5 +591,54 @@ describe('TrucoRoomsService — public tables', () => {
     t.service.leave(ana.userId);
     expect(t.publisher.publicChanges).toBeGreaterThan(before);
     expect(t.publisher.publicList()).toEqual([]);
+  });
+});
+
+describe('TrucoRoomsService — betting votes', () => {
+  /** Asks truco for whoever has the turn; returns the two responders. */
+  function askTruco(t: ReturnType<typeof setup>) {
+    const all = [ana, bia, caio, duda];
+    const turn = state(t).match!.turn;
+    t.service.requestBet(all[turn].userId);
+    return [all[(turn + 1) % 4], all[(turn + 3) % 4]];
+  }
+
+  it('shows each responder the partner vote privately and decides on the second vote', () => {
+    const t = setup();
+    started(t);
+    const [first, second] = askTruco(t);
+    t.service.respondBet(first.userId, 'accept');
+    expect(state(t).match!.pendingBet!.votes).toBe(1);
+    expect(
+      t.publisher.last<TrucoPrivateHand>(
+        'truco:private_hand',
+        `user:${second.userId}`,
+      ).betVotes,
+    ).toEqual({ mine: null, partner: 'accept' });
+    expect(t.publisher.count('truco:bet_voted')).toBe(1);
+    t.service.respondBet(second.userId, 'accept');
+    expect(state(t).match!.phase).toBe('AWAITING_PLAY');
+    expect(state(t).match!.value).toBe(3);
+  });
+
+  it('decides with one vote when the partner is disconnected', () => {
+    const t = setup();
+    started(t);
+    const [first, second] = askTruco(t);
+    t.service.disconnect(second.userId, socketOf(second));
+    t.service.respondBet(first.userId, 'accept');
+    expect(state(t).match!.phase).toBe('AWAITING_PLAY');
+  });
+
+  it('decides with the vote already cast when the partner drops', () => {
+    const t = setup();
+    started(t);
+    const [first, second] = askTruco(t);
+    t.service.respondBet(first.userId, 'accept');
+    t.service.disconnect(second.userId, socketOf(second));
+    expect(state(t).match!.phase).toBe('AWAITING_PLAY');
+    expect(t.publisher.last('truco:bet_resolved')).toMatchObject({
+      response: 'accept',
+    });
   });
 });

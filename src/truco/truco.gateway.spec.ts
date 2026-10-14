@@ -357,7 +357,7 @@ describe('TrucoGateway (Socket.IO integration)', () => {
     expect(new Set(requested.map((r) => r.seq)).size).toBe(1);
     expect(requested[0].value).toBe(3);
 
-    // Own team cannot answer; the opponent runs.
+    // Own team cannot answer; the opponent team votes to run.
     await expect(
       emit(four[(turn + 2) % 4], 'truco:respond_bet', {
         actionId: 'resp-0001',
@@ -366,6 +366,10 @@ describe('TrucoGateway (Socket.IO integration)', () => {
     ).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_MOVE' } });
     await ok(four[(turn + 1) % 4], 'truco:respond_bet', {
       actionId: 'resp-0002',
+      response: 'run',
+    });
+    await ok(four[(turn + 3) % 4], 'truco:respond_bet', {
+      actionId: 'resp-0003',
       response: 'run',
     });
     const scores = await Promise.all(

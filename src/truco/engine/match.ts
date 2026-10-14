@@ -7,6 +7,7 @@ import {
   type Seat,
   type Team,
   type TrucoBetResponse,
+  type TrucoBetVotes,
   type TrucoCard,
   type TrucoHandEndReason,
   type TrucoHandKind,
@@ -58,7 +59,13 @@ interface Hand {
   phase: TrucoHandPhase;
   cards: DealtCard[][];
   value: number;
-  pendingBet: (TrucoPendingBet & { previous: number }) | null;
+  pendingBet:
+    | (Omit<TrucoPendingBet, 'votes'> & {
+        previous: number;
+        /** Votes of the responding team, in the order they were cast. */
+        votes: { seat: Seat; response: TrucoBetResponse }[];
+      })
+    | null;
   lastRaiseTeam: Team | null;
   turn: Seat;
   rounds: Round[];
@@ -240,12 +247,28 @@ export class TrucoMatch {
     const value = nextBetValue(hand.value);
     if (value === null)
       throw new DomainError('INVALID_MOVE', 'A mão já vale o máximo');
-    hand.pendingBet = { value, requestedBy: seat, team, previous: hand.value };
+    hand.pendingBet = {
+      value,
+      requestedBy: seat,
+      team,
+      previous: hand.value,
+      votes: [],
+    };
     hand.phase = 'AWAITING_BET_RESPONSE';
     return [{ event: 'truco:bet_requested', payload: { seat, team, value } }];
   }
 
-  respondBet(seat: Seat, response: TrucoBetResponse): Announcement[] {
+  /**
+   * A player of the responding team votes. The bet is decided once both have
+   * voted (or right away with `solo`, when the partner is away); when the
+   * partners disagree the boldest vote wins: raise > accept > run. Until then a
+   * player may change their vote.
+   */
+  respondBet(
+    seat: Seat,
+    response: TrucoBetResponse,
+    solo = false,
+  ): Announcement[] {
     const hand = this.requireHand();
     this.requirePhase(hand, 'AWAITING_BET_RESPONSE');
     const bet = hand.pendingBet!;
@@ -255,6 +278,37 @@ export class TrucoMatch {
         'INVALID_MOVE',
         'Quem responde a aposta é a dupla adversária',
       );
+    if (response === 'raise' && nextBetValue(bet.value) === null)
+      throw new DomainError('INVALID_MOVE', 'A mão já vale o máximo');
+    bet.votes = [
+      ...bet.votes.filter((v) => v.seat !== seat),
+      { seat, response },
+    ];
+    if (!solo && !bet.votes.some((v) => v.seat === partnerOf(seat)))
+      return [{ event: 'truco:bet_voted', payload: { seat, team } }];
+    return this.resolveBet(hand);
+  }
+
+  /** `absent` left the vote: decide with the partner's vote, if already cast. */
+  resolveBetVotes(absent: Seat): Announcement[] {
+    const hand = this.hand;
+    const bet = hand?.pendingBet;
+    if (!hand || hand.phase !== 'AWAITING_BET_RESPONSE' || !bet) return [];
+    if (!bet.votes.some((v) => v.seat === partnerOf(absent))) return [];
+    return this.resolveBet(hand);
+  }
+
+  private resolveBet(hand: Hand): Announcement[] {
+    const bet = hand.pendingBet!;
+    const boldness: Record<TrucoBetResponse, number> = {
+      run: 0,
+      accept: 1,
+      raise: 2,
+    };
+    const { seat, response } = bet.votes.reduce((best, v) =>
+      boldness[v.response] > boldness[best.response] ? v : best,
+    );
+    const team = teamOf(seat);
 
     if (response === 'run') {
       return [
@@ -267,8 +321,6 @@ export class TrucoMatch {
     }
 
     const raised = response === 'raise' ? nextBetValue(bet.value) : null;
-    if (response === 'raise' && raised === null)
-      throw new DomainError('INVALID_MOVE', 'A mão já vale o máximo');
     // Raising implies accepting the pending value first.
     hand.value = bet.value;
     hand.lastRaiseTeam = bet.team;
@@ -283,7 +335,13 @@ export class TrucoMatch {
       ];
     }
     const value = raised;
-    hand.pendingBet = { value, requestedBy: seat, team, previous: bet.value };
+    hand.pendingBet = {
+      value,
+      requestedBy: seat,
+      team,
+      previous: bet.value,
+      votes: [],
+    };
     return [{ event: 'truco:bet_requested', payload: { seat, team, value } }];
   }
 
@@ -348,6 +406,7 @@ export class TrucoMatch {
         value: hand.pendingBet.value,
         requestedBy: hand.pendingBet.requestedBy,
         team: hand.pendingBet.team,
+        votes: hand.pendingBet.votes.length,
       },
       lastRaiseTeam: hand.lastRaiseTeam,
       turn: hand.turn,
@@ -382,7 +441,17 @@ export class TrucoMatch {
       partnerCards: showPartner
         ? hand.cards[partnerOf(seat)].map((c) => ({ ...c.card }))
         : null,
+      betVotes: this.betVotesOf(hand, seat),
     };
+  }
+
+  private betVotesOf(hand: Hand, seat: Seat): TrucoBetVotes | null {
+    const bet = hand.pendingBet;
+    if (hand.phase !== 'AWAITING_BET_RESPONSE' || !bet) return null;
+    if (teamOf(seat) === bet.team) return null;
+    const of = (s: Seat) =>
+      bet.votes.find((v) => v.seat === s)?.response ?? null;
+    return { mine: of(seat), partner: of(partnerOf(seat)) };
   }
 
   private closeRound(hand: Hand, round: Round): Announcement[] {

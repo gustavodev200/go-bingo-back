@@ -233,12 +233,22 @@ export class TrucoRoomsService implements OnModuleDestroy {
       this.removePlayer(room, userId, 'expired');
     }, this.config.reconnectGraceMs);
     this.ensureConnectedHost(room);
-    this.publish(room, [
+    const out: Announcement[] = [
       {
         event: 'truco:player_disconnected',
         payload: { seat, reconnectDeadline: state.reconnectDeadline },
       },
-    ]);
+    ];
+    // A bet vote never waits on someone who dropped: the partner's vote decides.
+    const decided =
+      room.phase === 'PLAYING' && room.match
+        ? room.match.resolveBetVotes(seat)
+        : [];
+    if (decided.length > 0) {
+      this.afterMatchChange(room, room.match!, [...out, ...decided]);
+      return;
+    }
+    this.publish(room, out);
   }
 
   takeSeat(userId: string, target: Seat): void {
@@ -301,8 +311,13 @@ export class TrucoRoomsService implements OnModuleDestroy {
     this.matchAction(userId, (m, seat) => m.requestBet(seat));
   }
 
+  /** A vote of the responding team; it counts alone when the partner is away. */
   respondBet(userId: string, response: TrucoBetResponse): void {
-    this.matchAction(userId, (m, seat) => m.respondBet(seat, response));
+    this.matchAction(userId, (m, seat, room) => {
+      const partner = room.seats[partnerOf(seat)];
+      const solo = !partner || partner.reconnectDeadline !== null;
+      return m.respondBet(seat, response, solo);
+    });
   }
 
   decideTen(userId: string, play: boolean): void {
@@ -341,12 +356,12 @@ export class TrucoRoomsService implements OnModuleDestroy {
 
   private matchAction(
     userId: string,
-    fn: (match: TrucoMatch, seat: Seat) => Announcement[],
+    fn: (match: TrucoMatch, seat: Seat, room: Room) => Announcement[],
   ): void {
     const room = this.requireRoom(userId);
     this.requirePhase(room, 'PLAYING');
     const match = room.match!;
-    const out = fn(match, this.seatOf(room, userId)!);
+    const out = fn(match, this.seatOf(room, userId)!, room);
     this.afterMatchChange(room, match, out);
   }
 
