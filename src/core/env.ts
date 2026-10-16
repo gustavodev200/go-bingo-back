@@ -88,12 +88,15 @@ const envSchema = z.object({
     .default(3_500),
   // Bomberman: rooms kept in memory at most (each runs a 30 Hz loop while playing).
   BOMBER_MAX_ROOMS: z.coerce.number().int().min(1).default(300),
-  // Snake.io: CPUs fill each arena up to this many snakes while few humans play (0 = humans only).
-  SNAKE_BOTS: z.coerce.number().int().min(0).max(60).default(16),
-  // Snake.io: humans per arena; a new arena opens when all are full.
-  SNAKE_MAX_PLAYERS: z.coerce.number().int().min(1).max(200).default(40),
-  // Snake.io: arenas kept in memory at most (each runs a 20 Hz loop).
-  SNAKE_MAX_ARENAS: z.coerce.number().int().min(1).default(20),
+  // Snake.io: how long a disconnected player keeps the place in the room.
+  SNAKE_RECONNECT_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(600_000)
+    .default(30_000),
+  // Snake.io: rooms kept in memory at most (each runs a 20 Hz loop).
+  SNAKE_MAX_ROOMS: z.coerce.number().int().min(1).default(200),
   // Voice chat: ICE servers handed to the browsers, as JSON (e.g. a TURN
   // server for players behind strict NATs). Absent = public STUN only.
   VOICE_ICE_SERVERS: z.preprocess(

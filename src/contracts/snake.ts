@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { roomCodeSchema } from './room';
 
 // ---------------------------------------------------------------------------
 // Arena and rules
@@ -8,7 +9,10 @@ import { z } from 'zod';
 export const SNAKE_TICK_RATE = 20;
 export const SNAKE_TICK_MS = 1000 / SNAKE_TICK_RATE;
 
-export const SNAKE_ARENA_RADIUS = 3000;
+/** Players per room (online only, no CPUs). */
+export const SNAKE_MAX_PLAYERS = 20;
+
+export const SNAKE_ARENA_RADIUS = 2000;
 export const SNAKE_START_MASS = 30;
 export const SNAKE_MIN_BOOST_MASS = 15;
 export const SNAKE_BASE_SPEED = 170; // units/s
@@ -16,8 +20,8 @@ export const SNAKE_BOOST_SPEED = 360;
 export const SNAKE_BOOST_MASS_PER_SEC = 7;
 export const SNAKE_TURN_SPEED = 4.2; // rad/s for a small snake
 
-export const SNAKE_FOOD_TARGET = 1800; // ambient pellets kept on the map
-export const SNAKE_FOOD_MAX = 4500; // hard cap including remains
+export const SNAKE_FOOD_TARGET = 900; // ambient pellets kept on the map
+export const SNAKE_FOOD_MAX = 2600; // hard cap including remains
 export const SNAKE_REMAINS_TTL_MS = 60_000;
 /** Extra pull radius around the head. */
 export const SNAKE_MAGNET = 34;
@@ -258,11 +262,16 @@ export function decodeSnakeFrame(
 // ---------------------------------------------------------------------------
 
 export const SNAKE_NAMESPACE = '/snake';
+export const SNAKE_PUBLIC_ROOMS_CHANNEL = 'snake-public-rooms';
 
 export const SnakeClientEvents = {
-  /** Enter an arena as a spectator (the arena keeps streaming frames). */
+  CREATE: 'snake:create',
+  WATCH_ROOMS: 'snake:watch_rooms',
+  UNWATCH_ROOMS: 'snake:unwatch_rooms',
+  /** Enter a room (also the reconnection); the arena streams right away. */
   JOIN: 'snake:join',
-  /** Spawn a snake (again) in the current arena. */
+  SET_VISIBILITY: 'snake:set_visibility',
+  /** Spawn a snake (again) in the room's arena. */
   PLAY: 'snake:play',
   LEAVE: 'snake:leave',
   /** Fire-and-forget: heading and boost. */
@@ -272,6 +281,8 @@ export const SnakeClientEvents = {
 } as const;
 
 export const SnakeServerEvents = {
+  STATE: 'snake:state',
+  ROOMS_UPDATED: 'snake:rooms_updated',
   /** Binary frame (see encodeSnakeFrame), volatile. */
   FRAME: 'snake:frame',
   /** Names and skins of snakes that appeared. */
@@ -282,6 +293,11 @@ export const SnakeServerEvents = {
 } as const;
 
 export const snakeEmptySchema = z.object({}).strict();
+export const snakeCreateSchema = z
+  .object({ isPublic: z.boolean().default(true) })
+  .strict();
+export const snakeJoinSchema = z.object({ code: roomCodeSchema });
+export const snakeVisibilitySchema = z.object({ isPublic: z.boolean() });
 export const snakePlaySchema = z.object({
   skin: z
     .number()
@@ -303,10 +319,35 @@ export const snakeViewSchema = z.object({
 /** [id, name, skin] */
 export type SnakeMeta = [number, string, number];
 
-export interface SnakeJoinData {
-  arena: number;
+export interface SnakeRoomPlayer {
+  userId: string;
+  nickname: string;
+  character: string | null;
+  connected: boolean;
+  /** Has a live snake right now. */
+  playing: boolean;
+}
+
+export interface SnakeRoomState {
+  code: string;
+  isPublic: boolean;
+  hostId: string;
+  players: SnakeRoomPlayer[];
+  /** Grows on every change; older states never replace newer ones. */
+  version: number;
+}
+
+export interface SnakeSnapshot {
+  state: SnakeRoomState;
   radius: number;
   meta: SnakeMeta[];
+}
+
+export interface SnakePublicRoom {
+  code: string;
+  hostNickname: string;
+  hostCharacter: string | null;
+  players: number;
 }
 
 export interface SnakeLeaderboardEntry {
@@ -316,6 +357,8 @@ export interface SnakeLeaderboardEntry {
 }
 
 export interface SnakeServerEventPayloads {
+  'snake:state': SnakeRoomState;
+  'snake:rooms_updated': { rooms: SnakePublicRoom[] };
   'snake:frame': ArrayBuffer;
   'snake:meta': { meta: SnakeMeta[] };
   'snake:leaderboard': {
@@ -344,7 +387,11 @@ export interface SnakeServerEventPayloads {
 export type SnakeServerEventName = keyof SnakeServerEventPayloads;
 
 export interface SnakeClientAckData {
-  'snake:join': SnakeJoinData;
+  'snake:create': SnakeSnapshot;
+  'snake:watch_rooms': SnakePublicRoom[];
+  'snake:unwatch_rooms': null;
+  'snake:join': SnakeSnapshot;
+  'snake:set_visibility': null;
   'snake:play': { id: number };
   'snake:leave': null;
 }
