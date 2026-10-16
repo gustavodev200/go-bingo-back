@@ -152,6 +152,10 @@ describe('SnakeRoomsService', () => {
   it('plays, steers, ranks and tells the player how it died', () => {
     const { service, publisher, timer } = setup();
     const code = service.create(ANA, 's1').state.code;
+    expect(() => service.play(ANA.userId, 4)).toThrow(
+      'Precisa de pelo menos 2 jogadores',
+    );
+    service.join(code, BIA, 's2');
     const { id } = service.play(ANA.userId, 4);
     expect(service.play(ANA.userId, 4).id).toBe(id);
     expect(publisher.lastState().players[0].playing).toBe(true);
@@ -163,7 +167,14 @@ describe('SnakeRoomsService', () => {
       rank: 1,
       total: 1,
     });
-    expect(decodeSnakeFrame(publisher.frames.at(-1)!.frame).myId).toBe(id);
+    expect(publisher.of('snake:leaderboard', 's2')[0].payload).toMatchObject({
+      rank: 0,
+    });
+    expect(
+      decodeSnakeFrame(
+        publisher.frames.filter((f) => f.socketId === 's1').at(-1)!.frame,
+      ).myId,
+    ).toBe(id);
     service.view(ANA.userId, 1, 99_999);
     for (let i = 0; i < 2000 && !publisher.of('snake:dead').length; i++) {
       service.input(ANA.userId, { a: 0, b: false });
@@ -178,6 +189,20 @@ describe('SnakeRoomsService', () => {
     );
     expect(publisher.lastState().players[0].playing).toBe(false);
     expect(service.play(ANA.userId, 1).id).toBeGreaterThan(0);
+  });
+
+  it('only connected players count for the minimum; a live snake keeps going alone', () => {
+    const { service } = setup();
+    const code = service.create(ANA, 's1').state.code;
+    service.join(code, BIA, 's2');
+    service.play(ANA.userId, 0);
+    service.disconnect(BIA.userId, 's2');
+    // already alive: keeps its snake
+    expect(service.play(ANA.userId, 0).id).toBeGreaterThan(0);
+    // Bia comes back to an empty-ish room where only she is online: cannot spawn
+    service.leave(ANA.userId);
+    service.join(code, BIA, 's2b');
+    expect(() => service.play(BIA.userId, 0)).toThrow(DomainError);
   });
 
   it('ignores input and view from users outside rooms; play requires a room', () => {

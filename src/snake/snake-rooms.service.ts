@@ -1,6 +1,7 @@
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import {
   SNAKE_MAX_PLAYERS,
+  SNAKE_MIN_PLAYERS,
   SNAKE_SKINS,
   SNAKE_TICK_MS,
   SNAKE_TICK_RATE,
@@ -162,6 +163,14 @@ export class SnakeRoomsService implements OnModuleDestroy {
     const p = room.players.get(userId)!;
     const current = room.arena.snakes.get(p.snakeId);
     if (current) return { id: current.id };
+    const online = [...room.players.values()].filter(
+      (o) => o.sockets.size,
+    ).length;
+    if (online < SNAKE_MIN_PLAYERS)
+      throw new DomainError(
+        'NOT_ENOUGH_PLAYERS',
+        'Precisa de pelo menos 2 jogadores na sala. Chame alguém pelo código!',
+      );
     const s = room.arena.spawn(
       p.nickname,
       Math.max(0, Math.min(SNAKE_SKINS.length - 1, skin)),

@@ -11,6 +11,8 @@ export const SNAKE_TICK_MS = 1000 / SNAKE_TICK_RATE;
 
 /** Players per room (online only, no CPUs). */
 export const SNAKE_MAX_PLAYERS = 20;
+/** Connected players needed in the room before anyone can spawn. */
+export const SNAKE_MIN_PLAYERS = 2;
 
 export const SNAKE_ARENA_RADIUS = 2000;
 export const SNAKE_START_MASS = 30;
