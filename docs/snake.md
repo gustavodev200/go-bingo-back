@@ -33,7 +33,7 @@ features/snake ──socket.io /snake──▶ SnakeGateway         auth JWT, Zo
 - Pontos coloridos dão massa; massa aumenta comprimento e espessura. Cobra grande vira mais devagar e enxerga mais longe.
 - Ao morrer, ~80% da massa vira restos brilhantes nas cores da cobra (somem em 60 s).
 - Impulso: 360 em vez de 170 unidades/s, gasta 7 de massa/s (cai como pontos atrás da cauda). Precisa de massa > 15.
-- Sem CPU: só jogadores de verdade. A sala é apagada quando o último sai.
+- Sem CPU: só jogadores de verdade. Só dá para nascer com pelo menos 2 jogadores conectados na sala (quem já está vivo continua se os outros saírem). A sala é apagada quando o último sai.
 
 ## Eventos (`/snake`)
 
