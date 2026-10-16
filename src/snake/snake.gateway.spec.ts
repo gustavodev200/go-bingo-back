@@ -8,15 +8,17 @@ import {
   decodeSnakeFrame,
   type Ack,
   type SnakeFrame,
-  type SnakeJoinData,
+  type SnakePublicRoom,
+  type SnakeSnapshot,
   type SnakeServerEventPayloads,
 } from '../contracts';
 import { JwtVerifier } from '../core/auth/jwt-verifier';
 import { DomainError } from '../core/domain-error';
+import { cryptoRandomInt, RANDOM_INT } from '../core/random';
 import { DRAW_TIMER, realDrawTimer } from '../game/draw-timer';
 import { ProfilesService } from '../profiles/profiles.service';
-import { SNAKE_CONFIG, SnakeArenasService } from './snake-arenas.service';
 import { SNAKE_PUBLISHER, SocketSnakePublisher } from './snake-publisher';
+import { SNAKE_CONFIG, SnakeRoomsService } from './snake-rooms.service';
 import { SnakeGateway } from './snake.gateway';
 
 /**
@@ -45,13 +47,14 @@ describe('SnakeGateway (Socket.IO integration)', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         SnakeGateway,
-        SnakeArenasService,
+        SnakeRoomsService,
         SocketSnakePublisher,
         { provide: SNAKE_PUBLISHER, useExisting: SocketSnakePublisher },
         {
           provide: SNAKE_CONFIG,
-          useValue: { bots: 0, maxPlayers: 40, maxArenas: 5 },
+          useValue: { reconnectGraceMs: 1_000, maxRooms: 50 },
         },
+        { provide: RANDOM_INT, useValue: cryptoRandomInt },
         { provide: DRAW_TIMER, useValue: realDrawTimer },
         {
           provide: JwtVerifier,
@@ -78,7 +81,12 @@ describe('SnakeGateway (Socket.IO integration)', () => {
     url = `http://127.0.0.1:${port}/snake`;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await Promise.all(
+      clients
+        .filter((c) => c.socket.connected)
+        .map((c) => emit(c, 'snake:leave').catch(() => undefined)),
+    );
     clients.forEach((c) => c.socket.close());
     clients = [];
   });
@@ -140,9 +148,9 @@ describe('SnakeGateway (Socket.IO integration)', () => {
     await expect(connect('x', 'garbage')).rejects.toThrow('UNAUTHENTICATED');
   });
 
-  it('requires a nickname, a joined arena and valid payloads', async () => {
+  it('requires a nickname, a room and valid payloads', async () => {
     const nonick = await connect('nonick');
-    await expect(emit(nonick, 'snake:join')).resolves.toMatchObject({
+    await expect(emit(nonick, 'snake:create')).resolves.toMatchObject({
       ok: false,
       error: { code: 'NICKNAME_REQUIRED' },
     });
@@ -155,17 +163,55 @@ describe('SnakeGateway (Socket.IO integration)', () => {
       ok: false,
       error: { code: 'INVALID_PAYLOAD' },
     });
-    await expect(emit(c, 'snake:join', { x: 1 })).resolves.toMatchObject({
+    await expect(emit(c, 'snake:join', { code: 'x' })).resolves.toMatchObject({
       ok: false,
       error: { code: 'INVALID_PAYLOAD' },
     });
+    await expect(
+      emit(c, 'snake:join', { code: 'ZZZZZZ' }),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
   });
 
-  it('two players share an arena: frames, meta, leaderboard and binary view', async () => {
+  it('lists public rooms live and hides private ones', async () => {
+    const [watcher, host] = await Promise.all([connect('u1'), connect('u0')]);
+    expect(await ok<SnakePublicRoom[]>(watcher, 'snake:watch_rooms')).toEqual(
+      [],
+    );
+    const created = await ok<SnakeSnapshot>(host, 'snake:create', {
+      isPublic: true,
+    });
+    await until(
+      () =>
+        watcher.events.find(
+          (e) =>
+            e.event === 'snake:rooms_updated' &&
+            (e.payload as { rooms: SnakePublicRoom[] }).rooms[0]?.code ===
+              created.state.code,
+        ),
+      'public list',
+    );
+    await ok(host, 'snake:set_visibility', { isPublic: false });
+    await until(
+      () =>
+        watcher.events.findLast(
+          (e) =>
+            e.event === 'snake:rooms_updated' &&
+            (e.payload as { rooms: unknown[] }).rooms.length === 0,
+        ),
+      'room hidden',
+    );
+    await ok(watcher, 'snake:unwatch_rooms');
+  });
+
+  it('two players share a room: state, frames, meta, leaderboard and feed', async () => {
     const [ana, bia] = await Promise.all([connect('u0'), connect('u1')]);
-    const ja = await ok<SnakeJoinData>(ana, 'snake:join');
-    const jb = await ok<SnakeJoinData>(bia, 'snake:join');
-    expect(jb.arena).toBe(ja.arena);
+    const created = await ok<SnakeSnapshot>(ana, 'snake:create', {
+      isPublic: false,
+    });
+    const joined = await ok<SnakeSnapshot>(bia, 'snake:join', {
+      code: created.state.code,
+    });
+    expect(joined.state.players.map((p) => p.nickname)).toEqual(['Ana', 'Bia']);
     ana.socket.emit('snake:view', { w: 1200, h: 800 });
     const { id } = await ok<{ id: number }>(ana, 'snake:play', { skin: 2 });
     await until(
@@ -191,14 +237,6 @@ describe('SnakeGateway (Socket.IO integration)', () => {
       'leaderboard',
     );
     expect(lb.top.some((t) => t.name === 'Ana')).toBe(true);
-    expect(lb.rank).toBeGreaterThan(0);
-  });
-
-  it('leaving kills the snake and the others see it in the feed', async () => {
-    const [ana, bia] = await Promise.all([connect('u0'), connect('u1')]);
-    await ok(ana, 'snake:join');
-    await ok(bia, 'snake:join');
-    await ok(ana, 'snake:play', { skin: 0 });
     await expect(ok(ana, 'snake:leave')).resolves.toBeNull();
     const feed = await until(
       () =>

@@ -45,15 +45,6 @@ export interface Food {
   key: number;
 }
 
-export interface BotBrain {
-  food: Food | null;
-  retarget: number;
-  wander: number;
-  aggro: number;
-  boostUntil: number;
-  skill: number;
-}
-
 export class Snake {
   mass = SNAKE_START_MASS;
   best = SNAKE_START_MASS;
@@ -68,13 +59,11 @@ export class Snake {
   alive = true;
   radius = snakeRadiusFor(SNAKE_START_MASS);
   bbox: [number, number, number, number] = [0, 0, 0, 0];
-  brain: BotBrain | null = null;
 
   constructor(
     readonly id: number,
     readonly name: string,
     readonly skin: number,
-    readonly isBot: boolean,
   ) {}
 
   get head(): Point {
@@ -89,20 +78,17 @@ export type ArenaEvent =
 export interface ArenaOptions {
   rng?: () => number;
   onEvent?: (ev: ArenaEvent) => void;
-  /** Bot brain, called once per tick for each CPU snake. */
-  think?: (arena: Arena, s: Snake) => void;
   foodTarget?: number;
 }
 
 /**
- * Pure simulation of one open arena: movement, spatial grids, collisions,
+ * Pure simulation of one room's arena: movement, spatial grids, collisions,
  * food and remains. No transport and no clock: `step()` advances one tick.
  */
 export class Arena {
   readonly radius = SNAKE_ARENA_RADIUS;
   readonly rng: () => number;
   onEvent: (ev: ArenaEvent) => void;
-  private readonly think: ((arena: Arena, s: Snake) => void) | null;
   private readonly foodTarget: number;
   tick = 0;
   readonly snakes = new Map<number, Snake>();
@@ -117,7 +103,6 @@ export class Arena {
   constructor(opts: ArenaOptions = {}) {
     this.rng = opts.rng ?? Math.random;
     this.onEvent = opts.onEvent ?? (() => undefined);
-    this.think = opts.think ?? null;
     this.foodTarget = opts.foodTarget ?? SNAKE_FOOD_TARGET;
     for (let i = 0; i < this.foodTarget; i++) this.spawnAmbient();
   }
@@ -211,14 +196,13 @@ export class Arena {
   spawn(
     name: string,
     skin: number,
-    isBot = false,
     at?: Point,
     mass = SNAKE_START_MASS,
   ): Snake {
     let id = this.nextSnakeId;
     while (this.snakes.has(id)) id = (id % 65000) + 1;
     this.nextSnakeId = (id % 65000) + 1;
-    const s = new Snake(id, name, skin, isBot);
+    const s = new Snake(id, name, skin);
     s.mass = s.best = mass;
     const [x, y] = at ?? this.freeSpot();
     // Face roughly toward the center so nobody spawns heading into the wall.
@@ -383,7 +367,6 @@ export class Arena {
     this.tick++;
     const list = [...this.snakes.values()];
 
-    if (this.think) for (const s of list) if (s.isBot) this.think(this, s);
     for (const s of list) this.move(s, dt);
     this.buildBodyGrid();
 
