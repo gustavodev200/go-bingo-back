@@ -72,6 +72,22 @@ const envSchema = z.object({
   UNO_ROUND_PAUSE_MS: z.coerce.number().int().min(0).max(15_000).default(4_000),
   // UNO: tables kept in memory at most (one per player).
   UNO_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
+  // Bomberman: how long a disconnected player's seat stays reserved.
+  BOMBER_RECONNECT_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(600_000)
+    .default(30_000),
+  // Bomberman: pause between the end of a round and the next one.
+  BOMBER_ROUND_PAUSE_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(15_000)
+    .default(3_500),
+  // Bomberman: rooms kept in memory at most (each runs a 30 Hz loop while playing).
+  BOMBER_MAX_ROOMS: z.coerce.number().int().min(1).default(300),
   // Voice chat: ICE servers handed to the browsers, as JSON (e.g. a TURN
   // server for players behind strict NATs). Absent = public STUN only.
   VOICE_ICE_SERVERS: z.preprocess(
