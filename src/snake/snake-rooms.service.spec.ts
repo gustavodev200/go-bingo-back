@@ -1,5 +1,6 @@
 import {
   SNAKE_MAX_PLAYERS,
+  SNAKE_TICK_MS,
   SNAKE_TICK_RATE,
   decodeSnakeFrame,
   type SnakePublicRoom,
@@ -45,6 +46,8 @@ class FakePublisher implements SnakePublisher {
   }
 }
 
+const GRACE_MS = 5_000;
+
 /** Manual clock: scheduled callbacks run only when the test says so. */
 class FakeTimer implements DrawTimer {
   private seq = 0;
@@ -60,14 +63,14 @@ class FakeTimer implements DrawTimer {
   /** Runs `times` arena ticks (only the tick-sized timers). */
   tick(times = 1) {
     for (let i = 0; i < times; i++) {
-      const due = [...this.pending].filter(([, t]) => t.ms < 1000);
+      const due = [...this.pending].filter(([, t]) => t.ms !== GRACE_MS);
       due.forEach(([id]) => this.pending.delete(id));
       due.forEach(([, t]) => t.fn());
     }
   }
   /** Fires the long timers (reconnection windows). */
   expire() {
-    const due = [...this.pending].filter(([, t]) => t.ms >= 1000);
+    const due = [...this.pending].filter(([, t]) => t.ms === GRACE_MS);
     due.forEach(([id]) => this.pending.delete(id));
     due.forEach(([, t]) => t.fn());
   }
@@ -88,7 +91,7 @@ function setup(config: Partial<SnakeConfig> = {}) {
   const publisher = new FakePublisher();
   const timer = new FakeTimer();
   const service = new SnakeRoomsService(
-    { reconnectGraceMs: 5_000, maxRooms: 5, ...config },
+    { reconnectGraceMs: GRACE_MS, maxRooms: 5, ...config },
     publisher,
     random,
     timer,
@@ -251,6 +254,22 @@ describe('SnakeRoomsService', () => {
     expect(publisher.frames).toHaveLength(0);
     expect(() => service.join(code, ANA, 's1')).toThrow('Sala não encontrada');
     service.disconnect(ANA.userId, 's1');
+  });
+
+  it('ticks at a fixed rate: time spent between ticks is discounted from the next wait', () => {
+    let now = 1_000;
+    const spy = jest.spyOn(performance, 'now').mockImplementation(() => now);
+    const { service, timer } = setup();
+    service.create(ANA, 's1');
+    const waits = () => [...timer.pending.values()].map((t) => t.ms);
+    expect(waits()).toEqual([SNAKE_TICK_MS]);
+    now += SNAKE_TICK_MS + 30; // the timer fired 30 ms late
+    timer.tick();
+    expect(waits()[0]).toBeCloseTo(SNAKE_TICK_MS - 30);
+    now += 10_000; // process stalled: restart the cadence instead of bursting
+    timer.tick();
+    expect(waits()[0]).toBe(0);
+    spy.mockRestore();
   });
 
   it('stops everything on shutdown', () => {

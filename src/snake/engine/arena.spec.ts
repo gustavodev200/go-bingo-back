@@ -4,6 +4,7 @@ import {
   SNAKE_BOOST_MASS_PER_SEC,
   SNAKE_MIN_BOOST_MASS,
   SNAKE_SKINS,
+  SNAKE_SKIN_NAMES,
   SNAKE_START_MASS,
   SNAKE_TICK_RATE,
   decodeSnakeFrame,
@@ -189,7 +190,11 @@ describe('Snake frame codec', () => {
 
   it('maps food color bytes to the palette or the skin', () => {
     expect(snakeFoodColor(1)).toMatch(/^#/);
-    const c = snakeSkinFoodColor(9, 3);
-    expect(snakeFoodColor(c)).toBe(SNAKE_SKINS[9][3]);
+    const c = snakeSkinFoodColor(9);
+    expect(snakeFoodColor(c, 3)).toBe(SNAKE_SKINS[9][3]);
+    // the last skin still fits in the byte
+    expect(snakeSkinFoodColor(SNAKE_SKINS.length - 1)).toBeLessThan(256);
+    expect(SNAKE_SKIN_NAMES).toHaveLength(SNAKE_SKINS.length);
+    expect(SNAKE_SKIN_NAMES).toContain('Flamengo');
   });
 });

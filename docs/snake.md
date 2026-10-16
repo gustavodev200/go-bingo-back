@@ -45,7 +45,7 @@ Cliente → servidor (ack `{ ok, data } | { ok: false, error }`):
 | `snake:watch_rooms` / `snake:unwatch_rooms` | `{}` | lista pública / `null` |
 | `snake:join` | `{ code }` | snapshot (também é a reconexão) |
 | `snake:set_visibility` | `{ isPublic }` (anfitrião) | `null` |
-| `snake:play` | `{ skin }` (0–11) | `{ id }` — nasce uma cobra com o apelido do perfil |
+| `snake:play` | `{ skin }` (índice em `SNAKE_SKINS`: 12 neon + 20 clubes da Série A 2026) | `{ id }` — nasce uma cobra com o apelido do perfil |
 | `snake:leave` | `{}` | `null` — sai da sala (a cobra viva morre) |
 | `snake:input` | `{ a, b }` direção absoluta (rad) e impulso | sem ack |
 | `snake:view` | `{ w, h }` unidades do mundo visíveis (limitado a 300–4000) | sem ack |

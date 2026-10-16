@@ -264,7 +264,7 @@ export class Arena {
           t[0],
           t[1],
           s.boostAcc * 0.8,
-          snakeSkinFoodColor(s.skin, this.tick),
+          snakeSkinFoodColor(s.skin),
           SNAKE_REMAINS_TTL_MS,
         );
         s.boostAcc = 0;
@@ -344,7 +344,7 @@ export class Arena {
     const drops: Point[] = [];
     for (let i = 0; i < s.pts.length; i += step) drops.push(s.pts[i]);
     const each = drops.length ? total / drops.length : 0;
-    drops.forEach((p, n) => {
+    drops.forEach((p) => {
       let v = each;
       while (v > 0.4) {
         const part = Math.min(v, 20);
@@ -354,7 +354,7 @@ export class Arena {
           p[0] + (this.rng() - 0.5) * j * 2,
           p[1] + (this.rng() - 0.5) * j * 2,
           part,
-          snakeSkinFoodColor(s.skin, n),
+          snakeSkinFoodColor(s.skin),
           SNAKE_REMAINS_TTL_MS,
         );
       }
