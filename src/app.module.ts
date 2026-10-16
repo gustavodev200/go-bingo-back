@@ -16,6 +16,7 @@ import { HealthController } from './health/health.controller';
 import { ProfilesModule } from './profiles/profiles.module';
 import { RankingModule } from './ranking/ranking.module';
 import { RoomsModule } from './rooms/rooms.module';
+import { SnakeModule } from './snake/snake.module';
 import { TrucoModule } from './truco/truco.module';
 import { UnoModule } from './uno/uno.module';
 import { VoiceModule } from './voice/voice.module';
@@ -33,6 +34,7 @@ import { VoiceModule } from './voice/voice.module';
     TrucoModule,
     UnoModule,
     BomberModule,
+    SnakeModule,
     VoiceModule,
   ],
   controllers: [HealthController],
