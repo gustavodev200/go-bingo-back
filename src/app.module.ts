@@ -7,6 +7,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { BomberModule } from './bomber/bomber.module';
 import { CoreModule } from './core/core.module';
 import { HttpThrottlerGuard } from './core/http-throttler.guard';
 import { GameModule } from './game/game.module';
@@ -31,6 +32,7 @@ import { VoiceModule } from './voice/voice.module';
     GuestsModule,
     TrucoModule,
     UnoModule,
+    BomberModule,
     VoiceModule,
   ],
   controllers: [HealthController],
