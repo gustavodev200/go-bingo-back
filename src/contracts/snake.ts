@@ -41,7 +41,11 @@ export const snakeTurnFor = (radius: number) =>
 export const snakeViewScaleFor = (radius: number) =>
   Math.max(0.45, Math.min(1, 1.25 - radius / 60));
 
-/** Neon skins: stripe colors. The index travels on the wire. */
+/**
+ * Skins: stripe colors. The index travels on the wire, so new skins are only
+ * ever appended. The first ones are neon; then the 2026 Série A clubs in
+ * their colors (just colors and names, no crests).
+ */
 export const SNAKE_SKINS: readonly (readonly string[])[] = [
   ['#3cf27a', '#1fbf55'],
   ['#ff4f6d', '#ffd23f'],
@@ -55,7 +59,66 @@ export const SNAKE_SKINS: readonly (readonly string[])[] = [
   ['#ffbe0b', '#fb5607', '#ff006e', '#8338ec', '#3a86ff'],
   ['#222831', '#00fff5'],
   ['#ffffff', '#ff3c3c'],
+  ['#1a1a1a', '#ffffff'],
+  ['#c8102e', '#1a1a1a'],
+  ['#0054a6', '#e30613', '#ffffff'],
+  ['#ffffff', '#1a1a1a', '#1a1a1a'],
+  ['#00843d', '#ffffff'],
+  ['#ffffff', '#ffffff', '#1a1a1a'],
+  ['#00543c', '#ffffff'],
+  ['#003da5', '#ffffff'],
+  ['#d1121f', '#1a1a1a'],
+  ['#7a1530', '#00663d', '#ffffff'],
+  ['#0d80bf', '#1a1a1a', '#ffffff'],
+  ['#e5050f', '#ffffff'],
+  ['#ffd400', '#00843d'],
+  ['#006437', '#ffffff'],
+  ['#ffffff', '#d6001c', '#0b1e44'],
+  ['#0b1f4f', '#ffffff'],
+  ['#ffffff', '#1a1a1a', '#ffffff'],
+  ['#e30613', '#ffffff', '#1a1a1a'],
+  ['#1a1a1a', '#1a1a1a', '#ffffff', '#d50000'],
+  ['#e30613', '#1a1a1a'],
 ];
+
+/** Display name of each skin (same order as SNAKE_SKINS). */
+export const SNAKE_SKIN_NAMES: readonly string[] = [
+  'Neon Verde',
+  'Fogo',
+  'Gelo',
+  'Laranja',
+  'Roxo',
+  'Limão',
+  'Pôr do sol',
+  'Oceano',
+  'Bandeira',
+  'Arco-íris',
+  'Ciber',
+  'Doce',
+  'Atlético-MG',
+  'Athletico-PR',
+  'Bahia',
+  'Botafogo',
+  'Chapecoense',
+  'Corinthians',
+  'Coritiba',
+  'Cruzeiro',
+  'Flamengo',
+  'Fluminense',
+  'Grêmio',
+  'Internacional',
+  'Mirassol',
+  'Palmeiras',
+  'RB Bragantino',
+  'Remo',
+  'Santos',
+  'São Paulo',
+  'Vasco',
+  'Vitória',
+];
+
+/** First club skin; the ones before it are the neon skins. */
+export const SNAKE_FIRST_TEAM_SKIN = 12;
 
 export const SNAKE_FOOD_COLORS = [
   '#ff4f6d',
@@ -70,15 +133,15 @@ export const SNAKE_FOOD_COLORS = [
 
 /**
  * Food color byte: below 128 it is an ambient palette index; from 128 on it
- * is `128 + skin * 10 + stripe`, so remains glow in the dead snake's colors.
+ * is `128 + skin`, so remains glow in the dead snake's colors (which stripe
+ * each pellet shows comes from its id).
  */
-export const snakeSkinFoodColor = (skin: number, n: number) =>
-  128 + skin * 10 + (n % (SNAKE_SKINS[skin]?.length ?? 1));
+export const snakeSkinFoodColor = (skin: number) => 128 + skin;
 
-export function snakeFoodColor(c: number): string {
+export function snakeFoodColor(c: number, id = 0): string {
   if (c < 128) return SNAKE_FOOD_COLORS[c % SNAKE_FOOD_COLORS.length];
-  const skin = SNAKE_SKINS[Math.floor((c - 128) / 10)] ?? SNAKE_SKINS[0];
-  return skin[((c - 128) % 10) % skin.length];
+  const skin = SNAKE_SKINS[c - 128] ?? SNAKE_SKINS[0];
+  return skin[id % skin.length];
 }
 
 // ---------------------------------------------------------------------------

@@ -54,6 +54,8 @@ interface Room {
   players: Map<string, PlayerState>;
   bySnake: Map<number, PlayerState>;
   timer: unknown;
+  /** When the next tick is due (performance.now ms); keeps a steady 20 Hz. */
+  nextTickAt: number;
   version: number;
 }
 
@@ -104,6 +106,7 @@ export class SnakeRoomsService implements OnModuleDestroy {
       players: new Map(),
       bySnake: new Map(),
       timer: undefined,
+      nextTickAt: performance.now() + SNAKE_TICK_MS,
       version: 0,
     };
     this.rooms.set(code, room);
@@ -331,12 +334,23 @@ export class SnakeRoomsService implements OnModuleDestroy {
     this.publisher.publicRoomsChanged(() => this.listPublic());
   }
 
+  /**
+   * Fixed-rate loop: each wait is measured to the next due time, so the time
+   * spent ticking and timer lateness don't pile up (steady frames = smooth clients).
+   */
   private schedule(room: Room): void {
-    room.timer = this.timer.set(() => {
-      if (this.rooms.get(room.code) !== room) return;
-      this.tick(room);
-      this.schedule(room);
-    }, SNAKE_TICK_MS);
+    const now = performance.now();
+    // Way behind (e.g. the process stalled): restart the cadence instead of bursting.
+    if (now - room.nextTickAt > SNAKE_TICK_MS * 5) room.nextTickAt = now;
+    room.timer = this.timer.set(
+      () => {
+        if (this.rooms.get(room.code) !== room) return;
+        room.nextTickAt += SNAKE_TICK_MS;
+        this.tick(room);
+        this.schedule(room);
+      },
+      Math.max(0, room.nextTickAt - now),
+    );
   }
 
   private onEvent(room: Room, ev: ArenaEvent): void {
