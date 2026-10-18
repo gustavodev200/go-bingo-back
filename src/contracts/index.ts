@@ -1,6 +1,7 @@
 export * from './bingo';
 export * from './bomber';
 export * from './coins';
+export * from './domino';
 export * from './profile';
 export * from './room';
 export * from './snake';

@@ -72,6 +72,29 @@ const envSchema = z.object({
   UNO_ROUND_PAUSE_MS: z.coerce.number().int().min(0).max(15_000).default(4_000),
   // UNO: tables kept in memory at most (one per player).
   UNO_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
+  // Dominó: how long a disconnected player's seat stays reserved.
+  DOMINO_RECONNECT_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(600_000)
+    .default(60_000),
+  // Dominó: time to act on a turn before it is played automatically.
+  DOMINO_TURN_MS: z.coerce
+    .number()
+    .int()
+    .min(5_000)
+    .max(120_000)
+    .default(25_000),
+  // Dominó: pause between the end of a round and the next deal.
+  DOMINO_ROUND_PAUSE_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(15_000)
+    .default(5_000),
+  // Dominó: tables kept in memory at most (one per player).
+  DOMINO_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
   // Bomberman: how long a disconnected player's seat stays reserved.
   BOMBER_RECONNECT_GRACE_MS: z.coerce
     .number()

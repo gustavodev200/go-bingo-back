@@ -8,7 +8,7 @@ import { roomCodeSchema } from './room';
 
 export const VOICE_NAMESPACE = '/voice';
 
-export const VOICE_GAMES = ['bingo', 'truco', 'uno'] as const;
+export const VOICE_GAMES = ['bingo', 'truco', 'uno', 'domino'] as const;
 export type VoiceGame = (typeof VOICE_GAMES)[number];
 
 /** Full mesh: every peer uploads its audio once per other peer, so the channel stays small. */
