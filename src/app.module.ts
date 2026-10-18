@@ -9,6 +9,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { BomberModule } from './bomber/bomber.module';
 import { CoreModule } from './core/core.module';
+import { DominoModule } from './domino/domino.module';
 import { HttpThrottlerGuard } from './core/http-throttler.guard';
 import { GameModule } from './game/game.module';
 import { GuestsModule } from './guests/guests.module';
@@ -33,6 +34,7 @@ import { VoiceModule } from './voice/voice.module';
     GuestsModule,
     TrucoModule,
     UnoModule,
+    DominoModule,
     BomberModule,
     SnakeModule,
     VoiceModule,
