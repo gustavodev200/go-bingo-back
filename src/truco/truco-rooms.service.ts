@@ -15,6 +15,8 @@ import {
   type TrucoRoomState,
   type TrucoSnapshot,
 } from '../contracts';
+import { ArenaService } from '../arena/arena.service';
+import { MatchTracker } from '../arena/match-tracker';
 import { DomainError } from '../core/domain-error';
 import { RANDOM_INT, type RandomInt } from '../core/random';
 import { DRAW_TIMER, type DrawTimer } from '../game/draw-timer';
@@ -57,6 +59,8 @@ interface Room {
   seats: (SeatState | null)[];
   match: TrucoMatch | null;
   result: TrucoMatchResult | null;
+  /** Quem sentou e quem saiu, para a Arena pagar moedas e pontos no fim. */
+  tracker: MatchTracker | null;
   seq: number;
   version: number;
   handTimer: unknown;
@@ -86,6 +90,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
     @Inject(TRUCO_CONFIG) private readonly config: TrucoConfig,
     @Inject(RANDOM_INT) private readonly random: RandomInt,
     @Inject(DRAW_TIMER) private readonly timer: DrawTimer,
+    private readonly arena: ArenaService,
   ) {}
 
   private now(): number {
@@ -120,6 +125,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
       seats: Array.from({ length: TRUCO_SEATS }, () => null),
       match: null,
       result: null,
+      tracker: null,
       seq: 0,
       version: 0,
       handTimer: undefined,
@@ -287,6 +293,10 @@ export class TrucoRoomsService implements OnModuleDestroy {
     room.match = new TrucoMatch(this.random, { mode: room.mode });
     room.phase = 'PLAYING';
     room.result = null;
+    room.tracker = new MatchTracker(
+      seated.map((s) => ({ seat: room.seats.indexOf(s), userId: s.userId })),
+      this.now(),
+    );
     this.publish(room, [
       { event: 'truco:match_started', payload: {} },
       ...room.match.deal(),
@@ -377,6 +387,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
         reason: 'points',
         scores: [...match.scores],
       };
+      this.settle(room, match.winner);
     } else if (match.phase === 'HAND_OVER') {
       room.handTimer = this.timer.set(() => {
         room.handTimer = undefined;
@@ -388,6 +399,21 @@ export class TrucoRoomsService implements OnModuleDestroy {
     this.publish(room, out);
   }
 
+  /** Moedas e ranking: a dupla vencedora divide o pote. Roda uma vez por partida. */
+  private settle(room: Room, winnerTeam: number): void {
+    const tracker = room.tracker;
+    room.tracker = null;
+    if (!tracker) return;
+    void this.arena.settleSafe({
+      matchId: tracker.matchId,
+      game: 'TRUCO',
+      durationMs: tracker.durationMs(this.now()),
+      participants: tracker.participants((seat) =>
+        teamOf(seat as Seat) === winnerTeam ? 1 : 2,
+      ),
+    });
+  }
+
   private removePlayer(
     room: Room,
     userId: string,
@@ -397,6 +423,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
     const state = room.seats[seat]!;
     const out: Announcement[] = [];
     if (room.phase === 'PLAYING' && room.match) {
+      room.tracker?.markLeft(seat);
       out.push(...room.match.abandon(teamOf(seat)));
       room.phase = 'FINISHED';
       room.result = {
@@ -404,6 +431,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
         reason: 'abandoned',
         scores: [...room.match.scores],
       };
+      this.settle(room, room.match.winner!);
       this.timer.clear(room.handTimer);
       room.handTimer = undefined;
     }

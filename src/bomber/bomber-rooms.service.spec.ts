@@ -1,3 +1,4 @@
+import type { ArenaService } from '../arena/arena.service';
 import {
   BOMBER_TICK_MS,
   type BomberFrame,
@@ -85,6 +86,7 @@ describe('BomberRoomsService', () => {
   let publisher: FakePublisher;
   let timer: FakeTimer;
   let service: BomberRoomsService;
+  let arena: { settleSafe: jest.Mock };
   let seq = 0;
 
   beforeEach(() => {
@@ -100,7 +102,14 @@ describe('BomberRoomsService', () => {
     // Deterministic "random": cycles through small numbers.
     const random = (min: number, max: number) =>
       min + (seq++ % Math.max(1, max - min));
-    service = new BomberRoomsService(publisher, config, random, timer);
+    arena = { settleSafe: jest.fn().mockResolvedValue(null) };
+    service = new BomberRoomsService(
+      publisher,
+      config,
+      random,
+      timer,
+      arena as unknown as ArenaService,
+    );
   });
 
   afterEach(() => service.onModuleDestroy());
@@ -316,6 +325,17 @@ describe('BomberRoomsService', () => {
     // Only one bomber left: the match is decided.
     expect(state().phase).toBe('FINISHED');
     expect(publisher.last('bomber:match_over')).toMatchObject({ winner: 0 });
+    expect(arena.settleSafe).toHaveBeenCalledTimes(1);
+    expect(arena.settleSafe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        game: 'BOMBER',
+        participants: [
+          { userId: 'a', placement: 1, abandoned: false },
+          { userId: 'b', placement: 2, abandoned: true },
+          { userId: 'c', placement: 2, abandoned: true },
+        ],
+      }),
+    );
   });
 
   it('plays rounds until someone reaches the wins needed, then rematch', () => {

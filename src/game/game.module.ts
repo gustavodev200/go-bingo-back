@@ -2,6 +2,7 @@
 // sem branch/lógica de decisão); cada provider listado já tem spec própria.
 /* istanbul ignore file */
 import { Module } from '@nestjs/common';
+import { ArenaModule } from '../arena/arena.module';
 import { ProfilesModule } from '../profiles/profiles.module';
 import { RoomsModule } from '../rooms/rooms.module';
 import { DRAW_TIMER, realDrawTimer } from './draw-timer';
@@ -14,7 +15,7 @@ import { RealtimePublisher } from './realtime-publisher';
 import { SnapshotService } from './snapshot.service';
 
 @Module({
-  imports: [RoomsModule, ProfilesModule, PresenceModule],
+  imports: [RoomsModule, ProfilesModule, PresenceModule, ArenaModule],
   providers: [
     MembershipService,
     GamesService,

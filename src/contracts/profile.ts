@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ARENA_GAMES } from './arena';
 import { COIN_REASONS } from './coins';
 
 export const nicknameSchema = z
@@ -98,6 +99,19 @@ export const profileStatsSchema = z.object({
   wins: z.number().int(),
   points: z.number().int(),
   rank: z.number().int().nullable(),
+  /** > 0 vitórias seguidas, < 0 derrotas seguidas (todos os jogos). */
+  streak: z.number().int().default(0),
+  bestStreak: z.number().int().default(0),
+  /** Partidas e vitórias por jogo (Arena). */
+  perGame: z
+    .array(
+      z.object({
+        game: z.enum(ARENA_GAMES),
+        played: z.number().int(),
+        wins: z.number().int(),
+      }),
+    )
+    .default([]),
   coinHistory: z.array(coinEntrySchema),
 });
 export type ProfileStats = z.infer<typeof profileStatsSchema>;

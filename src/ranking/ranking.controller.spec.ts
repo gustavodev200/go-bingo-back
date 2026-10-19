@@ -11,9 +11,9 @@ describe('RankingController', () => {
     );
     const user: AuthUser = { id: 'u1', isAnonymous: false };
 
-    const result = controller.list(user, { cursor: 50 });
+    const result = controller.list(user, { cursor: 50, scope: 'week' });
 
-    expect(ranking.list).toHaveBeenCalledWith('u1', 50);
+    expect(ranking.list).toHaveBeenCalledWith('u1', 50, 'week');
     return expect(result).resolves.toBe(response);
   });
 });

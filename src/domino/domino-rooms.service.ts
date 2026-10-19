@@ -16,6 +16,8 @@ import {
   type DominoSide,
   type DominoSnapshot,
 } from '../contracts';
+import { ArenaService } from '../arena/arena.service';
+import { MatchTracker, rankSeats } from '../arena/match-tracker';
 import { DomainError } from '../core/domain-error';
 import { RANDOM_INT, type RandomInt } from '../core/random';
 import { DRAW_TIMER, type DrawTimer } from '../game/draw-timer';
@@ -60,6 +62,8 @@ interface Room {
   seats: (SeatState | null)[];
   match: DominoMatch | null;
   result: DominoMatchResult | null;
+  /** Quem sentou e quem saiu, para a Arena pagar moedas e pontos no fim. */
+  tracker: MatchTracker | null;
   seq: number;
   version: number;
   roundTimer: unknown;
@@ -95,6 +99,7 @@ export class DominoRoomsService implements OnModuleDestroy {
     @Inject(DOMINO_CONFIG) private readonly config: DominoConfig,
     @Inject(RANDOM_INT) private readonly random: RandomInt,
     @Inject(DRAW_TIMER) private readonly timer: DrawTimer,
+    private readonly arena: ArenaService,
   ) {}
 
   private now(): number {
@@ -128,6 +133,7 @@ export class DominoRoomsService implements OnModuleDestroy {
       seats: Array.from({ length: DOMINO_SEATS }, () => null),
       match: null,
       result: null,
+      tracker: null,
       seq: 0,
       version: 0,
       roundTimer: undefined,
@@ -277,6 +283,10 @@ export class DominoRoomsService implements OnModuleDestroy {
     room.match = match;
     room.phase = 'PLAYING';
     room.result = null;
+    room.tracker = new MatchTracker(
+      seated.map((s) => ({ seat: room.seats.indexOf(s), userId: s.userId })),
+      this.now(),
+    );
     this.afterMatchChange(room, [
       { event: 'domino:match_started', payload: {} },
       ...match.startRound(),
@@ -344,6 +354,7 @@ export class DominoRoomsService implements OnModuleDestroy {
         scores: [...match.scores],
       };
       out.push({ event: 'domino:match_over', payload: { ...room.result } });
+      this.settle(room, match);
     } else if (match.phase === 'ROUND_OVER') {
       this.stopTurnClock(room);
       if (!room.roundTimer)
@@ -358,6 +369,24 @@ export class DominoRoomsService implements OnModuleDestroy {
       this.startTurnClock(room, match);
     }
     this.publish(room, out);
+  }
+
+  /** Moedas e ranking: a dupla (ou o jogador) vencedora leva o pote; os demais ficam por pontos. */
+  private settle(room: Room, match: DominoMatch): void {
+    const tracker = room.tracker;
+    room.tracker = null;
+    if (!tracker || !match.winners) return;
+    const placeOf = rankSeats(
+      tracker.seatList(),
+      (seat) => match.scores[seat] ?? 0,
+      new Set(match.winners),
+    );
+    void this.arena.settleSafe({
+      matchId: tracker.matchId,
+      game: 'DOMINO',
+      durationMs: tracker.durationMs(this.now()),
+      participants: tracker.participants(placeOf),
+    });
   }
 
   private startTurnClock(room: Room, match: DominoMatch): void {
@@ -406,6 +435,7 @@ export class DominoRoomsService implements OnModuleDestroy {
       room.hostId = (next ?? room.seats.find((s) => s !== null)!).userId;
     }
     if (room.phase === 'PLAYING' && room.match) {
+      room.tracker?.markLeft(seat);
       out.push(...room.match.removePlayer(seat));
       this.afterMatchChange(room, out, 'abandoned');
       return;

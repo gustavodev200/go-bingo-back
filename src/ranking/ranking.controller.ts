@@ -1,5 +1,9 @@
 import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
-import { rankingQuerySchema, type RankingResponse } from '../contracts';
+import {
+  rankingQuerySchema,
+  type RankingResponse,
+  type RankingScope,
+} from '../contracts';
 import { CurrentUser } from '../core/auth/current-user.decorator';
 import { HttpAuthGuard } from '../core/auth/http-auth.guard';
 import type { AuthUser } from '../core/auth/jwt-verifier';
@@ -15,8 +19,9 @@ export class RankingController {
   @Header('Cache-Control', 'private, max-age=60')
   list(
     @CurrentUser() user: AuthUser,
-    @Query(new ZodPipe(rankingQuerySchema)) query: { cursor: number },
+    @Query(new ZodPipe(rankingQuerySchema))
+    query: { cursor: number; scope: RankingScope },
   ): Promise<RankingResponse> {
-    return this.ranking.list(user.id, query.cursor);
+    return this.ranking.list(user.id, query.cursor, query.scope);
   }
 }

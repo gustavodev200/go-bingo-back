@@ -1,3 +1,4 @@
+import { ArenaService } from '../arena/arena.service';
 import type { INestApplication } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { Test } from '@nestjs/testing';
@@ -49,6 +50,10 @@ describe('TrucoGateway (Socket.IO integration)', () => {
       providers: [
         TrucoGateway,
         TrucoRoomsService,
+        {
+          provide: ArenaService,
+          useValue: { settleSafe: jest.fn().mockResolvedValue(null) },
+        },
         SocketTrucoPublisher,
         { provide: TRUCO_PUBLISHER, useExisting: SocketTrucoPublisher },
         {

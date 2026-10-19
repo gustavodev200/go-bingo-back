@@ -51,6 +51,7 @@ export async function charge(
 /**
  * Cobra até `amount` de cada jogador, parando em zero (saldo nunca negativo).
  * O extrato registra o valor efetivamente descontado; quem já estava zerado não gera linha.
+ * Devolve quanto saiu de cada um (a Arena soma isso no pote).
  */
 export async function chargeUpTo(
   tx: Tx,
@@ -58,8 +59,9 @@ export async function chargeUpTo(
   amount: number,
   reason: CoinReason,
   gameId?: string,
-): Promise<void> {
-  if (userIds.length === 0) return;
+): Promise<Map<string, number>> {
+  const taken = new Map<string, number>();
+  if (userIds.length === 0) return taken;
   const rows = await tx.$queryRaw<Array<{ id: string; charged: number }>>`
     WITH before AS (
       SELECT "id", "coins" FROM "Profile" WHERE "id" = ANY(${[...userIds]}::uuid[]) FOR UPDATE
@@ -71,6 +73,8 @@ export async function chargeUpTo(
     .filter((r) => r.charged > 0)
     .map((r) => ({ userId: r.id, amount: -r.charged, reason, gameId }));
   if (data.length > 0) await tx.coinTransaction.createMany({ data });
+  for (const r of rows) taken.set(r.id, Math.max(r.charged, 0));
+  return taken;
 }
 
 /** Dia corrente no fuso do Brasil, como DATE (meia-noite UTC) — chave do bônus diário. */

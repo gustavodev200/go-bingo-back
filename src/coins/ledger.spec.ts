@@ -59,10 +59,12 @@ describe('chargeUpTo', () => {
       { id: A, charged: 20 },
       { id: B, charged: 0 },
     ]);
-    await chargeUpTo(client, [A, B], 20, 'LOSS', 'g1');
+    const taken = await chargeUpTo(client, [A, B], 20, 'LOSS', 'g1');
     expect(tx.coinTransaction.createMany).toHaveBeenCalledWith({
       data: [{ userId: A, amount: -20, reason: 'LOSS', gameId: 'g1' }],
     });
+    expect(taken.get(A)).toBe(20);
+    expect(taken.get(B)).toBe(0);
   });
 
   it('does nothing for an empty list', async () => {

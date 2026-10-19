@@ -1,3 +1,4 @@
+import type { ArenaService } from '../arena/arena.service';
 import type {
   UnoPrivateHand,
   UnoPublicRoom,
@@ -98,6 +99,7 @@ function cyclingRandom() {
 function setup(config: Partial<UnoConfig> = {}) {
   const publisher = new FakePublisher();
   const timer = new FakeTimer();
+  const arena = { settleSafe: jest.fn().mockResolvedValue(null) };
   const service = new UnoRoomsService(
     publisher,
     {
@@ -110,9 +112,10 @@ function setup(config: Partial<UnoConfig> = {}) {
     },
     cyclingRandom(),
     timer,
+    arena as unknown as ArenaService,
   );
   const state = () => publisher.last('uno:state');
-  return { publisher, timer, service, state };
+  return { publisher, timer, service, state, arena };
 }
 
 function codeOf(fn: () => unknown): string | undefined {
@@ -333,8 +336,8 @@ describe('UnoRoomsService — match', () => {
     expect(timer.scheduled(TURN)).toBe(1);
   });
 
-  it('gives the match to the last player standing', () => {
-    const { service, state, timer, publisher } = started(2);
+  it('gives the match to the last player standing and settles it in the Arena', () => {
+    const { service, state, timer, publisher, arena } = started(2);
     service.disconnect(bia.userId, 's-u1');
     timer.fire(GRACE);
     expect(state().phase).toBe('FINISHED');
@@ -344,6 +347,16 @@ describe('UnoRoomsService — match', () => {
       reason: 'abandoned',
     });
     expect(timer.scheduled(TURN)).toBe(0);
+    expect(arena.settleSafe).toHaveBeenCalledTimes(1);
+    expect(arena.settleSafe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        game: 'UNO',
+        participants: [
+          { userId: ana.userId, placement: 1, abandoned: false },
+          { userId: bia.userId, placement: 2, abandoned: true },
+        ],
+      }),
+    );
   });
 
   it('goes back to the lobby for a rematch', () => {

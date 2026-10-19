@@ -1,3 +1,4 @@
+import type { ArenaService } from '../arena/arena.service';
 import {
   SNAKE_MAX_PLAYERS,
   SNAKE_TICK_MS,
@@ -90,13 +91,15 @@ const random = (min: number, max: number) => (codeSeq++ % (max - min)) + min;
 function setup(config: Partial<SnakeConfig> = {}) {
   const publisher = new FakePublisher();
   const timer = new FakeTimer();
+  const arena = { settleSafe: jest.fn().mockResolvedValue(null) };
   const service = new SnakeRoomsService(
     { reconnectGraceMs: GRACE_MS, maxRooms: 5, ...config },
     publisher,
     random,
     timer,
+    arena as unknown as ArenaService,
   );
-  return { publisher, timer, service };
+  return { publisher, timer, service, arena };
 }
 
 describe('SnakeRoomsService', () => {
@@ -192,6 +195,50 @@ describe('SnakeRoomsService', () => {
     );
     expect(publisher.lastState().players[0].playing).toBe(false);
     expect(service.play(ANA.userId, 1).id).toBeGreaterThan(0);
+  });
+
+  it('settles a kill between two players as a duel in the Arena, but not suicides', () => {
+    const { service, timer, arena } = setup();
+    const code = service.create(ANA, 's1').state.code;
+    service.join(code, BIA, 's2');
+    const killerId = service.play(ANA.userId, 1).id;
+    const victimId = service.play(BIA.userId, 2).id;
+    timer.tick();
+    const room = (
+      service as unknown as {
+        rooms: Map<
+          string,
+          {
+            arena: {
+              snakes: Map<number, never>;
+              onEvent: (ev: unknown) => void;
+            };
+          }
+        >;
+      }
+    ).rooms.get(code)!;
+    const killer = room.arena.snakes.get(killerId);
+    const victim = room.arena.snakes.get(victimId);
+
+    room.arena.onEvent({ t: 'death', snake: victim, killer });
+
+    expect(arena.settleSafe).toHaveBeenCalledTimes(1);
+    expect(arena.settleSafe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        game: 'SNAKE',
+        participants: [
+          { userId: ANA.userId, placement: 1 },
+          { userId: BIA.userId, placement: 2 },
+        ],
+      }),
+    );
+
+    // Bateu na borda / no próprio corpo: sem duelo.
+    service.play(BIA.userId, 2);
+    arena.settleSafe.mockClear();
+    const again = room.arena.snakes.get(killerId);
+    room.arena.onEvent({ t: 'death', snake: again, killer: null });
+    expect(arena.settleSafe).not.toHaveBeenCalled();
   });
 
   it('only connected players count for the minimum; a live snake keeps going alone', () => {

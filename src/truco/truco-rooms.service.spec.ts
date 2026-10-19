@@ -1,3 +1,4 @@
+import type { ArenaService } from '../arena/arena.service';
 import type {
   TrucoPrivateHand,
   TrucoPublicRoom,
@@ -84,6 +85,7 @@ function setup(config: Partial<TrucoConfig> = {}) {
     seed = (seed * 48271) % 2147483647;
     return min + (seed % (max - min));
   };
+  const arena = { settleSafe: jest.fn().mockResolvedValue(null) };
   const service = new TrucoRoomsService(
     publisher,
     {
@@ -95,8 +97,9 @@ function setup(config: Partial<TrucoConfig> = {}) {
     },
     random,
     timer,
+    arena as unknown as ArenaService,
   );
-  return { service, publisher, timer };
+  return { service, publisher, timer, arena };
 }
 
 function full(t: ReturnType<typeof setup>) {
@@ -461,6 +464,18 @@ describe('TrucoRoomsService — presence', () => {
     expect(s.phase).toBe('FINISHED');
     expect(s.result).toMatchObject({ winnerTeam: 1, reason: 'abandoned' });
     expect(s.seats[2]).toBeNull();
+    expect(t.arena.settleSafe).toHaveBeenCalledTimes(1);
+    expect(t.arena.settleSafe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        game: 'TRUCO',
+        participants: [
+          { userId: ana.userId, placement: 2, abandoned: false },
+          { userId: bia.userId, placement: 1, abandoned: false },
+          { userId: caio.userId, placement: 2, abandoned: true },
+          { userId: duda.userId, placement: 1, abandoned: false },
+        ],
+      }),
+    );
     expect(t.timer.pending.filter((p) => p.ms === PAUSE)).toHaveLength(0);
   });
 

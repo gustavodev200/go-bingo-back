@@ -1,16 +1,17 @@
+import { ARENA_RULES } from './arena';
 import type { WinPattern } from './bingo';
 
 /** Economia de moedas (cash do jogo). Saldo nunca fica negativo. Convidados participam igual. */
 export const WELCOME_COINS = 1000;
 export const DAILY_COINS = 50;
 export const CARD_COST = 5;
-/** Prêmio do vencedor por modo da sala. */
+/** Bônus da casa ao vencedor por modo da sala (soma-se ao pote das entradas; ver contracts/arena). */
 export const WIN_COINS: Record<WinPattern, number> = {
-  FULL_CARD: 200,
-  LINE: 100,
+  FULL_CARD: ARENA_RULES.BINGO.winBonus,
+  LINE: ARENA_RULES.BINGO.winBonus / 2,
 };
-/** Desconto de quem tinha cartela numa partida que outro venceu (até zerar o saldo). */
-export const LOSS_COINS = 20;
+/** Entrada de quem tinha cartela numa partida que outro venceu (até zerar o saldo); vai para o pote. */
+export const LOSS_COINS = ARENA_RULES.BINGO.ante;
 
 export const COIN_REASONS = [
   'WELCOME',
@@ -18,5 +19,17 @@ export const COIN_REASONS = [
   'CARD',
   'WIN',
   'LOSS',
+  /** Entrada de uma disputa (Arena). */
+  'STAKE',
+  /** Parte do pote ganha pela colocação. */
+  'PRIZE',
+  /** Bônus da casa: vitória, sequência, virada... */
+  'BONUS',
+  /** Multa de quem abandona a partida. */
+  'PENALTY',
+  /** Bônus por subir de liga. */
+  'TIER',
+  /** Prêmio do ranking semanal. */
+  'SEASON',
 ] as const;
 export type CoinReason = (typeof COIN_REASONS)[number];

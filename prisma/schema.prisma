@@ -32,6 +32,21 @@ enum CoinReason {
   CARD
   WIN
   LOSS
+  STAKE
+  PRIZE
+  BONUS
+  PENALTY
+  TIER
+  SEASON
+}
+
+enum ArenaGame {
+  BINGO
+  UNO
+  TRUCO
+  DOMINO
+  SNAKE
+  BOMBER
 }
 
 /// RLS ligada por migration (enable_rls); novas tabelas precisam do mesmo ALTER na migration que as cria.
@@ -48,10 +63,20 @@ model Profile {
   coins            Int               @default(0)
   /// Dia (America/Sao_Paulo) do último bônus diário.
   lastDailyBonusOn DateTime?         @db.Date
+  /// Dia (America/Sao_Paulo) da última "primeira vitória do dia".
+  lastWinBonusOn   DateTime?         @db.Date
+  /// > 0 vitórias seguidas, < 0 derrotas seguidas (Arena, todos os jogos).
+  streak           Int               @default(0)
+  bestStreak       Int               @default(0)
+  /// Partidas que entraram no rating (calibração do fator K).
+  ratedMatches     Int               @default(0)
+  /// Maior liga já alcançada (índice em TIERS); o bônus de subida é pago uma vez por liga.
+  bestTier         Int               @default(0)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   memberships      RoomMember[]
   coinTransactions CoinTransaction[]
+  matchResults     MatchResult[]
 
   @@index([points(sort: Desc)])
 }
@@ -141,4 +166,44 @@ model CoinTransaction {
   profile   Profile    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+/// Resultado de um jogador numa disputa (todos os jogos). (matchId, userId) único = liquidar duas vezes não paga duas vezes.
+model MatchResult {
+  id           String    @id @default(uuid()) @db.Uuid
+  matchId      String    @db.Uuid
+  userId       String    @db.Uuid
+  game         ArenaGame
+  placement    Int
+  players      Int
+  won          Boolean
+  abandoned    Boolean   @default(false)
+  rated        Boolean   @default(false)
+  pointsDelta  Int       @default(0)
+  coinsDelta   Int       @default(0)
+  staked       Int       @default(0)
+  prize        Int       @default(0)
+  bonuses      Json      @default("[]")
+  streak       Int       @default(0)
+  pointsAfter  Int       @default(0)
+  tierUp       Json?
+  createdAt    DateTime  @default(now())
+  profile      Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, userId])
+  @@index([userId, createdAt])
+  @@index([createdAt, userId])
+}
+
+/// Prêmio pago do ranking semanal (weekStart = segunda-feira, America/Sao_Paulo); único por (semana, posição).
+model SeasonPayout {
+  id        String   @id @default(uuid()) @db.Uuid
+  weekStart DateTime @db.Date
+  rank      Int
+  userId    String   @db.Uuid
+  coins     Int
+  points    Int
+  createdAt DateTime @default(now())
+
+  @@unique([weekStart, rank])
 }

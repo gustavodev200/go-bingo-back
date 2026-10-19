@@ -13,6 +13,8 @@ import {
   type SnakeServerEventPayloads,
   type SnakeSnapshot,
 } from '../contracts';
+import { ArenaService } from '../arena/arena.service';
+import { randomUUID } from 'node:crypto';
 import { DomainError } from '../core/domain-error';
 import { RANDOM_INT, type RandomInt } from '../core/random';
 import { DRAW_TIMER, type DrawTimer } from '../game/draw-timer';
@@ -77,6 +79,7 @@ export class SnakeRoomsService implements OnModuleDestroy {
     @Inject(SNAKE_PUBLISHER) private readonly publisher: SnakePublisher,
     @Inject(RANDOM_INT) private readonly random: RandomInt,
     @Inject(DRAW_TIMER) private readonly timer: DrawTimer,
+    private readonly arena: ArenaService,
   ) {}
 
   roomOf(userId: string): string | undefined {
@@ -367,6 +370,7 @@ export class SnakeRoomsService implements OnModuleDestroy {
     });
     const p = room.bySnake.get(s.id);
     if (!p) return;
+    this.settleKill(room, p, ev.killer);
     room.bySnake.delete(s.id);
     p.snakeId = 0;
     p.dead = true;
@@ -383,6 +387,25 @@ export class SnakeRoomsService implements OnModuleDestroy {
       this.publisher.toSocket(socketId, 'snake:dead', dead);
     // `playing` changed; skip while the room is being torn down by removePlayer.
     if (room.players.has(p.userId)) this.publish(room);
+  }
+
+  /** Cada abate entre dois jogadores é um duelo: o abatido paga a recompensa e o rating anda. */
+  private settleKill(
+    room: Room,
+    victim: PlayerState,
+    killer: Snake | null,
+  ): void {
+    const winner = killer ? room.bySnake.get(killer.id) : undefined;
+    if (!winner || winner.userId === victim.userId) return;
+    void this.arena.settleSafe({
+      matchId: randomUUID(),
+      game: 'SNAKE',
+      durationMs: Date.now() - victim.bornAt,
+      participants: [
+        { userId: winner.userId, placement: 1 },
+        { userId: victim.userId, placement: 2 },
+      ],
+    });
   }
 
   private tick(room: Room): void {

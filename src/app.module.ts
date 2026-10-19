@@ -7,6 +7,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ArenaModule } from './arena/arena.module';
 import { BomberModule } from './bomber/bomber.module';
 import { CoreModule } from './core/core.module';
 import { DominoModule } from './domino/domino.module';
@@ -30,6 +31,7 @@ import { VoiceModule } from './voice/voice.module';
     RoomsModule,
     GameModule,
     RankingModule,
+    ArenaModule,
     ScheduleModule.forRoot(),
     GuestsModule,
     TrucoModule,
