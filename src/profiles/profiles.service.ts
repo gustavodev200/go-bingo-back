@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { credit, saoPauloDay } from '../coins/ledger';
 import {
+  ARENA_GAMES,
   characterSchema,
   COIN_HISTORY_LIMIT,
   DAILY_COINS,
@@ -101,7 +102,7 @@ export class ProfilesService {
 
   /** Partidas, vitórias, pontos e as últimas movimentações de moedas (sem a posição no ranking). */
   async stats(userId: string): Promise<Omit<ProfileStats, 'rank'>> {
-    const [profile, wins, history] = await Promise.all([
+    const [profile, bingoWins, history, groups] = await Promise.all([
       this.prisma.profile.findUniqueOrThrow({ where: { id: userId } }),
       this.prisma.game.count({
         where: { winnerId: userId, status: 'FINISHED' },
@@ -111,11 +112,34 @@ export class ProfilesService {
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: COIN_HISTORY_LIMIT,
       }),
+      this.prisma.matchResult.groupBy({
+        by: ['game', 'won'],
+        where: { userId },
+        _count: { _all: true },
+      }),
     ]);
+    const perGame = ARENA_GAMES.map((game) => {
+      const rows = groups.filter((g) => g.game === game);
+      const played = rows.reduce((n, g) => n + g._count._all, 0);
+      const wins = rows
+        .filter((g) => g.won)
+        .reduce((n, g) => n + g._count._all, 0);
+      // Vitórias de bingo anteriores à Arena só existem em Game.winnerId.
+      return game === 'BINGO'
+        ? {
+            game,
+            played: Math.max(played, bingoWins),
+            wins: Math.max(wins, bingoWins),
+          }
+        : { game, played, wins };
+    });
     return {
       gamesPlayed: profile.gamesPlayed,
-      wins,
+      wins: perGame.reduce((n, g) => n + g.wins, 0),
       points: profile.points,
+      streak: profile.streak,
+      bestStreak: profile.bestStreak,
+      perGame,
       coinHistory: history.map((t) => ({
         id: t.id,
         amount: t.amount,

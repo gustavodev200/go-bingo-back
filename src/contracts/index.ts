@@ -1,3 +1,4 @@
+export * from './arena';
 export * from './bingo';
 export * from './bomber';
 export * from './coins';

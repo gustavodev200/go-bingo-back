@@ -1,3 +1,4 @@
+import { ArenaService } from '../arena/arena.service';
 import type { INestApplication } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { Test } from '@nestjs/testing';
@@ -48,6 +49,10 @@ describe('SnakeGateway (Socket.IO integration)', () => {
       providers: [
         SnakeGateway,
         SnakeRoomsService,
+        {
+          provide: ArenaService,
+          useValue: { settleSafe: jest.fn().mockResolvedValue(null) },
+        },
         SocketSnakePublisher,
         { provide: SNAKE_PUBLISHER, useExisting: SocketSnakePublisher },
         {

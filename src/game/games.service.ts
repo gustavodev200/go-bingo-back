@@ -1,15 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { chargeUpTo, credit } from '../coins/ledger';
+import { ArenaService } from '../arena/arena.service';
+import { chargeUpTo } from '../coins/ledger';
 import {
   CARD_COST,
   DEFAULT_WIN_PATTERN,
   FREE_CELL,
   FREE_INDEX,
   letterFor,
-  LOSS_COINS,
   remainingFor,
-  WIN_COINS,
-  WIN_POINTS,
   type NumberDrawn,
   type Winner,
 } from '../contracts';
@@ -34,6 +32,7 @@ export class GamesService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(RANDOM_INT) private readonly random: RandomInt,
+    private readonly arena: ArenaService,
   ) {}
 
   start(
@@ -193,7 +192,6 @@ export class GamesService {
         'Bingo inválido: ainda faltam números',
       );
 
-    const coinsAwarded = WIN_COINS[room.winPattern];
     const winner = await this.prisma.$transaction(async (tx) => {
       const won = await tx.game.updateMany({
         where: { id: game.id, status: 'IN_PROGRESS', winnerId: null },
@@ -209,29 +207,28 @@ export class GamesService {
         where: { gameId: game.id, userId: { not: user.id } },
         select: { userId: true },
       });
-      const loserIds = losers.map((c) => c.userId);
-      // Ranking só pontua vitória sobre outro jogador logado: contra convidados (ex.: a própria
-      // pessoa numa aba anônima, que nunca pede bingo) daria para inflar pontos à vontade.
-      const loggedOpponents = user.isAnonymous
-        ? 0
-        : await tx.profile.count({
-            where: { id: { in: loserIds }, isGuest: false },
-          });
-      const pointsAwarded =
-        loggedOpponents > 0 ? WIN_POINTS[room.winPattern] : 0;
-      const profile = await tx.profile.update({
-        where: { id: user.id },
-        data: pointsAwarded > 0 ? { points: { increment: pointsAwarded } } : {},
+      // Arena: todo mundo que tinha cartela entra no pote (inclusive quem saiu no meio);
+      // pontos só contam entre jogadores logados.
+      const results = await this.arena.settleIn(tx, {
+        matchId: game.id,
+        game: 'BINGO',
+        durationMs: Date.now() - game.startedAt.getTime(),
+        bonusScale: room.winPattern === 'LINE' ? 0.5 : 1,
+        skipGamesPlayed: true,
+        participants: [
+          { userId: user.id, placement: 1 },
+          ...losers.map((c) => ({ userId: c.userId, placement: 2 })),
+        ],
       });
-      // Moedas: vencedor ganha; todo mundo que tinha cartela nesta partida perde (até zerar),
-      // inclusive quem saiu no meio — sair não livra da perda.
-      await credit(tx, user.id, coinsAwarded, 'WIN', game.id);
-      await chargeUpTo(tx, loserIds, LOSS_COINS, 'LOSS', game.id);
+      const mine = results?.get(user.id);
+      const profile = await tx.profile.findUniqueOrThrow({
+        where: { id: user.id },
+      });
       return {
         userId: user.id,
         nickname: profile.nickname ?? 'Jogador',
-        pointsAwarded,
-        coinsAwarded,
+        pointsAwarded: Math.max(mine?.pointsDelta ?? 0, 0),
+        coinsAwarded: Math.max(mine?.coinsDelta ?? 0, 0),
         grid: card.grid,
       };
     });

@@ -8,6 +8,7 @@ function makePrisma() {
       findUnique: jest.fn(),
       count: jest.fn(),
     },
+    $queryRaw: jest.fn(),
   };
 }
 
@@ -112,5 +113,52 @@ describe('RankingService', () => {
         OR: [{ points: { gt: 42 } }, { points: 42, id: { lt: 'u1' } }],
       },
     });
+  });
+});
+
+describe('RankingService weekly scope', () => {
+  it('lists the week by points won across all games, with matches and the viewer position', async () => {
+    const prisma = makePrisma();
+    prisma.$queryRaw
+      .mockResolvedValueOnce([
+        { id: 'u1', nickname: 'Ana', points: 90, matches: 7 },
+        { id: 'u2', nickname: null, points: 40, matches: 2 },
+      ])
+      .mockResolvedValueOnce([{ points: 40, matches: 2 }]) // o próprio jogador
+      .mockResolvedValueOnce([{ n: 1 }]); // quantos estão à frente
+    const service = new RankingService(prisma as unknown as PrismaService);
+
+    const result = await service.list('u2', 0, 'week');
+
+    expect(result).toEqual({
+      entries: [
+        { rank: 1, userId: 'u1', nickname: 'Ana', points: 90, matches: 7 },
+        { rank: 2, userId: 'u2', nickname: 'Jogador', points: 40, matches: 2 },
+      ],
+      me: { rank: 2, points: 40, matches: 2 },
+      nextCursor: null,
+      scope: 'week',
+    });
+  });
+
+  it('pages the week board and hides the viewer when they have no points this week', async () => {
+    const prisma = makePrisma();
+    const rows = Array.from({ length: 51 }, (_, i) => ({
+      id: `u${i}`,
+      nickname: `P${i}`,
+      points: 100 - i,
+      matches: 3,
+    }));
+    prisma.$queryRaw
+      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce([{ points: null, matches: 0 }]);
+    const service = new RankingService(prisma as unknown as PrismaService);
+
+    const result = await service.list('viewer', 50, 'week');
+
+    expect(result.entries).toHaveLength(50);
+    expect(result.entries[0].rank).toBe(51);
+    expect(result.nextCursor).toBe(100);
+    expect(result.me).toBeNull();
   });
 });

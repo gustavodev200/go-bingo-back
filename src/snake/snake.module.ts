@@ -4,13 +4,14 @@
 import { Module } from '@nestjs/common';
 import { ENV, type Env } from '../core/env';
 import { DRAW_TIMER, realDrawTimer } from '../game/draw-timer';
+import { ArenaModule } from '../arena/arena.module';
 import { ProfilesModule } from '../profiles/profiles.module';
 import { SNAKE_PUBLISHER, SocketSnakePublisher } from './snake-publisher';
 import { SNAKE_CONFIG, SnakeRoomsService } from './snake-rooms.service';
 import { SnakeGateway } from './snake.gateway';
 
 @Module({
-  imports: [ProfilesModule],
+  imports: [ProfilesModule, ArenaModule],
   providers: [
     SocketSnakePublisher,
     { provide: SNAKE_PUBLISHER, useExisting: SocketSnakePublisher },

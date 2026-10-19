@@ -1,10 +1,5 @@
-import {
-  CARD_COST,
-  FREE_INDEX,
-  LOSS_COINS,
-  WIN_COINS,
-  WIN_POINTS,
-} from '../contracts';
+import { CARD_COST, FREE_INDEX } from '../contracts';
+import type { ArenaService } from '../arena/arena.service';
 import type { AuthUser } from '../core/auth/jwt-verifier';
 import { Prisma } from '../generated/prisma/client';
 import type { PrismaService } from '../core/prisma.service';
@@ -53,6 +48,7 @@ function makePrisma() {
     profile: {
       updateMany: jest.fn(),
       update: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       // adversários logados na partida (pontos de ranking)
       count: jest.fn().mockResolvedValue(0),
     },
@@ -70,6 +66,20 @@ function makePrisma() {
 
 const random: RandomInt = () => 0;
 
+/** Arena falsa: devolve o resultado do vencedor (u1) ou nada (null). */
+function makeArena(
+  mine: { pointsDelta: number; coinsDelta: number } | null = {
+    pointsDelta: 0,
+    coinsDelta: 0,
+  },
+) {
+  return {
+    settleIn: jest
+      .fn()
+      .mockResolvedValue(mine ? new Map([['u1', mine]]) : null),
+  } as unknown as ArenaService & { settleIn: jest.Mock };
+}
+
 describe('GamesService.start', () => {
   it('rejects when the room does not exist', async () => {
     const prisma = makePrisma();
@@ -77,6 +87,7 @@ describe('GamesService.start', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.start('ABC123', 'host')).rejects.toMatchObject({
@@ -90,6 +101,7 @@ describe('GamesService.start', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.start('ABC123', 'host')).rejects.toMatchObject({
@@ -109,6 +121,7 @@ describe('GamesService.start', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.start('ABC123', 'intruder')).rejects.toMatchObject({
@@ -128,6 +141,7 @@ describe('GamesService.start', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.start('ABC123', 'host')).rejects.toMatchObject({
@@ -147,6 +161,7 @@ describe('GamesService.start', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.start('ABC123', 'host')).rejects.toMatchObject({
@@ -166,6 +181,7 @@ describe('GamesService.start', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.start('ABC123', 'host')).rejects.toMatchObject({
@@ -187,6 +203,7 @@ describe('GamesService.start', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.start('ABC123', 'host')).rejects.toMatchObject({
@@ -209,6 +226,7 @@ describe('GamesService.start', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     const result = await service.start('ABC123', 'host');
@@ -261,6 +279,7 @@ describe('GamesService.start', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await service.start('ABC123', 'host');
@@ -276,6 +295,7 @@ describe('GamesService.drawNext', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.drawNext('g1')).resolves.toEqual({ kind: 'stopped' });
@@ -290,6 +310,7 @@ describe('GamesService.drawNext', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.drawNext('g1')).resolves.toEqual({ kind: 'stopped' });
@@ -309,6 +330,7 @@ describe('GamesService.drawNext', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.drawNext('g1')).resolves.toEqual({
@@ -334,6 +356,7 @@ describe('GamesService.drawNext', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.drawNext('g1')).resolves.toEqual({ kind: 'stopped' });
@@ -356,6 +379,7 @@ describe('GamesService.drawNext', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       () => 0,
+      makeArena(),
     );
 
     const result = await service.drawNext('g1');
@@ -388,6 +412,7 @@ describe('GamesService.drawNext', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       () => 0,
+      makeArena(),
     );
 
     await expect(service.drawNext('g1')).resolves.toEqual({ kind: 'skipped' });
@@ -408,6 +433,7 @@ describe('GamesService.drawNext', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       () => 0,
+      makeArena(),
     );
 
     await expect(service.drawNext('g1')).resolves.toEqual({ kind: 'skipped' });
@@ -420,6 +446,7 @@ describe('GamesService.drawNext', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.drawNext('g1')).rejects.toBe(boom);
@@ -449,6 +476,7 @@ describe('GamesService.mark', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.mark('ABC123', 'u1', FREE_INDEX)).resolves.toEqual([
@@ -469,6 +497,7 @@ describe('GamesService.mark', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.mark('ABC123', 'u1', 3)).resolves.toEqual([]);
@@ -489,6 +518,7 @@ describe('GamesService.mark', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.mark('ABC123', 'u1', 0)).resolves.toEqual([0]);
@@ -510,6 +540,7 @@ describe('GamesService.mark', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.mark('ABC123', 'u1', 0)).rejects.toMatchObject({
@@ -533,6 +564,7 @@ describe('GamesService.mark', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.mark('ABC123', 'u1', 0)).resolves.toEqual([1, 0]);
@@ -547,6 +579,7 @@ describe('GamesService.mark', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     prisma.room.findUnique.mockResolvedValue(null);
@@ -588,6 +621,7 @@ describe('GamesService.claim', () => {
       id: 'g1',
       roomId: 'r1',
       status: 'IN_PROGRESS',
+      startedAt: new Date(Date.now() - 120_000),
     });
     prisma.roomMember.findUnique.mockResolvedValue({ userId: 'u1' });
   }
@@ -604,6 +638,7 @@ describe('GamesService.claim', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
     const user: AuthUser = { id: 'u1', isAnonymous: false };
 
@@ -625,6 +660,7 @@ describe('GamesService.claim', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
     const user: AuthUser = { id: 'u1', isAnonymous: false };
 
@@ -633,11 +669,13 @@ describe('GamesService.claim', () => {
     });
   });
 
-  it('awards points to a registered winner who beat another registered player and reopens the room', async () => {
+  it('settles the table through the Arena in the same transaction and reports the winner payout', async () => {
     const prisma = makePrisma();
     setupActiveCard(prisma);
-    prisma.card.findMany.mockResolvedValue([{ userId: 'u2' }]);
-    prisma.profile.count.mockResolvedValue(1);
+    prisma.card.findMany.mockResolvedValue([
+      { userId: 'u2' },
+      { userId: 'u3' },
+    ]);
     prisma.card.findUnique.mockResolvedValue({
       id: 'c1',
       grid: [1, 2],
@@ -645,54 +683,12 @@ describe('GamesService.claim', () => {
     });
     prisma.draw.findMany.mockResolvedValue([{ number: 1 }, { number: 2 }]);
     prisma.game.updateMany.mockResolvedValue({ count: 1 });
-    prisma.profile.update.mockResolvedValue({ nickname: 'Fulano' });
+    prisma.profile.findUniqueOrThrow.mockResolvedValue({ nickname: 'Fulano' });
+    const arena = makeArena({ pointsDelta: 12, coinsDelta: 150 });
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
-    );
-    const user: AuthUser = { id: 'u1', isAnonymous: false };
-
-    const result = await service.claim('ABC123', user);
-
-    expect(result).toEqual({
-      gameId: 'g1',
-      winner: {
-        userId: 'u1',
-        nickname: 'Fulano',
-        pointsAwarded: WIN_POINTS.FULL_CARD,
-        coinsAwarded: WIN_COINS.FULL_CARD,
-        grid: [1, 2],
-      },
-    });
-    expect(prisma.profile.update).toHaveBeenCalledWith({
-      where: { id: 'u1' },
-      data: { points: { increment: WIN_POINTS.FULL_CARD } },
-    });
-    expect(prisma.profile.count).toHaveBeenCalledWith({
-      where: { id: { in: ['u2'] }, isGuest: false },
-    });
-    expect(prisma.room.update).toHaveBeenCalledWith({
-      where: { id: 'r1' },
-      data: { status: 'WAITING' },
-    });
-  });
-
-  it('awards zero points to a registered winner when every opponent is a guest (no ranking farming)', async () => {
-    const prisma = makePrisma();
-    setupActiveCard(prisma);
-    prisma.card.findUnique.mockResolvedValue({
-      id: 'c1',
-      grid: [1, 2],
-      marked: [],
-    });
-    prisma.card.findMany.mockResolvedValue([{ userId: 'guest' }]);
-    prisma.profile.count.mockResolvedValue(0);
-    prisma.draw.findMany.mockResolvedValue([{ number: 1 }, { number: 2 }]);
-    prisma.game.updateMany.mockResolvedValue({ count: 1 });
-    prisma.profile.update.mockResolvedValue({ nickname: 'Fulano' });
-    const service = new GamesService(
-      prisma as unknown as PrismaService,
-      random,
+      arena,
     );
 
     const result = await service.claim('ABC123', {
@@ -700,41 +696,42 @@ describe('GamesService.claim', () => {
       isAnonymous: false,
     });
 
-    expect(result.winner.pointsAwarded).toBe(0);
-    expect(prisma.profile.update).toHaveBeenCalledWith({
-      where: { id: 'u1' },
-      data: {},
+    expect(result).toEqual({
+      gameId: 'g1',
+      winner: {
+        userId: 'u1',
+        nickname: 'Fulano',
+        pointsAwarded: 12,
+        coinsAwarded: 150,
+        grid: [1, 2],
+      },
     });
-  });
-
-  it('awards zero points to an anonymous winner, and falls back to "Jogador"', async () => {
-    const prisma = makePrisma();
-    setupActiveCard(prisma);
-    prisma.card.findUnique.mockResolvedValue({
-      id: 'c1',
-      grid: [1, 2],
-      marked: [],
-    });
-    prisma.draw.findMany.mockResolvedValue([{ number: 1 }, { number: 2 }]);
-    prisma.game.updateMany.mockResolvedValue({ count: 1 });
-    prisma.profile.update.mockResolvedValue({ nickname: null });
-    const service = new GamesService(
-      prisma as unknown as PrismaService,
-      random,
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(arena.settleIn).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        matchId: 'g1',
+        game: 'BINGO',
+        bonusScale: 1,
+        skipGamesPlayed: true,
+        participants: [
+          { userId: 'u1', placement: 1 },
+          { userId: 'u2', placement: 2 },
+          { userId: 'u3', placement: 2 },
+        ],
+      }),
     );
-    const user: AuthUser = { id: 'u1', isAnonymous: true };
-
-    const result = await service.claim('ABC123', user);
-
-    expect(result.winner.pointsAwarded).toBe(0);
-    expect(result.winner.nickname).toBe('Jogador');
-    expect(prisma.profile.update).toHaveBeenCalledWith({
-      where: { id: 'u1' },
-      data: {},
+    expect(prisma.card.findMany).toHaveBeenCalledWith({
+      where: { gameId: 'g1', userId: { not: 'u1' } },
+      select: { userId: true },
+    });
+    expect(prisma.room.update).toHaveBeenCalledWith({
+      where: { id: 'r1' },
+      data: { status: 'WAITING' },
     });
   });
 
-  it('winner gets WIN_COINS (guests too); everyone else with a card loses up to LOSS_COINS', async () => {
+  it('never reports a negative payout and falls back to "Jogador" without a nickname', async () => {
     const prisma = makePrisma();
     setupActiveCard(prisma);
     prisma.card.findUnique.mockResolvedValue({
@@ -744,18 +741,11 @@ describe('GamesService.claim', () => {
     });
     prisma.draw.findMany.mockResolvedValue([{ number: 1 }, { number: 2 }]);
     prisma.game.updateMany.mockResolvedValue({ count: 1 });
-    prisma.profile.update.mockResolvedValue({ nickname: 'Fulano' });
-    prisma.card.findMany.mockResolvedValue([
-      { userId: 'u2' },
-      { userId: 'u3' },
-    ]);
-    prisma.$queryRaw.mockResolvedValue([
-      { id: 'u2', charged: 20 },
-      { id: 'u3', charged: 7 },
-    ]);
+    prisma.profile.findUniqueOrThrow.mockResolvedValue({ nickname: null });
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(null),
     );
 
     const result = await service.claim('ABC123', {
@@ -763,24 +753,9 @@ describe('GamesService.claim', () => {
       isAnonymous: true,
     });
 
-    expect(result.winner.coinsAwarded).toBe(WIN_COINS.FULL_CARD);
-    expect(prisma.profile.update).toHaveBeenCalledWith({
-      where: { id: 'u1' },
-      data: { coins: { increment: WIN_COINS.FULL_CARD } },
-    });
-    expect(prisma.card.findMany).toHaveBeenCalledWith({
-      where: { gameId: 'g1', userId: { not: 'u1' } },
-      select: { userId: true },
-    });
-    expect(prisma.$queryRaw.mock.calls[0]).toEqual(
-      expect.arrayContaining([['u2', 'u3'], LOSS_COINS]),
-    );
-    expect(prisma.coinTransaction.createMany).toHaveBeenCalledWith({
-      data: [
-        { userId: 'u2', amount: -20, reason: 'LOSS', gameId: 'g1' },
-        { userId: 'u3', amount: -7, reason: 'LOSS', gameId: 'g1' },
-      ],
-    });
+    expect(result.winner.pointsAwarded).toBe(0);
+    expect(result.winner.coinsAwarded).toBe(0);
+    expect(result.winner.nickname).toBe('Jogador');
   });
 });
 
@@ -801,47 +776,36 @@ describe('GamesService.claim in Quina (LINE) rooms', () => {
       id: 'g1',
       roomId: 'r1',
       status: 'IN_PROGRESS',
+      startedAt: new Date(Date.now() - 120_000),
     });
     prisma.roomMember.findUnique.mockResolvedValue({ userId: 'u1' });
     prisma.card.findUnique.mockResolvedValue({ id: 'c1', grid, marked: [] });
     prisma.draw.findMany.mockResolvedValue(drawn.map((number) => ({ number })));
     prisma.game.updateMany.mockResolvedValue({ count: 1 });
-    prisma.profile.update.mockResolvedValue({ nickname: 'Fulano' });
+    prisma.profile.findUniqueOrThrow.mockResolvedValue({ nickname: 'Fulano' });
+    const arena = makeArena();
     return {
       prisma,
-      service: new GamesService(prisma as unknown as PrismaService, random),
+      arena,
+      service: new GamesService(
+        prisma as unknown as PrismaService,
+        random,
+        arena,
+      ),
     };
   }
 
-  it('accepts a middle row through the free center with only 4 numbers and pays the Quina prize', async () => {
+  it('accepts a middle row through the free center with only 4 numbers and halves the house bonus', async () => {
     // linha 2 (row = 2): índices 2, 7, 12 (FREE), 17, 22
-    const { prisma, service } = setup([3, 8, 18, 23]);
+    const { arena, service } = setup([3, 8, 18, 23]);
 
-    const result = await service.claim('ABC123', {
-      id: 'u1',
-      isAnonymous: false,
-    });
+    await service.claim('ABC123', { id: 'u1', isAnonymous: false });
 
-    expect(result.winner.coinsAwarded).toBe(WIN_COINS.LINE);
-    expect(result.winner.pointsAwarded).toBe(0); // sem adversário logado
-    expect(prisma.profile.update).toHaveBeenCalledWith({
-      where: { id: 'u1' },
-      data: { coins: { increment: WIN_COINS.LINE } },
-    });
-  });
-
-  it('a Quina win over a registered player is worth fewer points than a full card', async () => {
-    const { prisma, service } = setup([1, 2, 3, 4, 5]);
-    prisma.card.findMany.mockResolvedValue([{ userId: 'u2' }]);
-    prisma.profile.count.mockResolvedValue(1);
-
-    const result = await service.claim('ABC123', {
-      id: 'u1',
-      isAnonymous: false,
-    });
-
-    expect(result.winner.pointsAwarded).toBe(WIN_POINTS.LINE);
-    expect(WIN_POINTS.LINE).toBeLessThan(WIN_POINTS.FULL_CARD);
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(arena.settleIn).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ bonusScale: 0.5 }),
+    );
   });
 
   it('accepts a full column', async () => {
@@ -880,6 +844,7 @@ describe('GamesService read helpers', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.progress('g1')).resolves.toEqual({ u1: 1 });
@@ -895,6 +860,7 @@ describe('GamesService read helpers', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.progress('g1')).resolves.toEqual({
@@ -909,6 +875,7 @@ describe('GamesService read helpers', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.drawnNumbers('g1')).resolves.toEqual([5, 12]);
@@ -930,6 +897,7 @@ describe('GamesService read helpers', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.findInProgress()).resolves.toEqual([
@@ -947,6 +915,7 @@ describe('GamesService.endIfNoPlayers', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.endIfNoPlayers('ABC123')).resolves.toBeNull();
@@ -959,6 +928,7 @@ describe('GamesService.endIfNoPlayers', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
     await expect(service.endIfNoPlayers('ABC123')).resolves.toBeNull();
 
@@ -976,6 +946,7 @@ describe('GamesService.endIfNoPlayers', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.endIfNoPlayers('ABC123')).resolves.toBeNull();
@@ -994,6 +965,7 @@ describe('GamesService.endIfNoPlayers', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.endIfNoPlayers('ABC123')).resolves.toBe('g1');
@@ -1016,6 +988,7 @@ describe('GamesService.endIfNoPlayers', () => {
     const service = new GamesService(
       prisma as unknown as PrismaService,
       random,
+      makeArena(),
     );
 
     await expect(service.endIfNoPlayers('ABC123')).resolves.toBeNull();

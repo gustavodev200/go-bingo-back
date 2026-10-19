@@ -16,6 +16,7 @@ function makePrisma() {
     },
     coinTransaction: { create: jest.fn(), findMany: jest.fn() },
     game: { count: jest.fn() },
+    matchResult: { groupBy: jest.fn() },
   };
   return {
     ...models,
@@ -32,6 +33,11 @@ const row = {
   coins: 120,
   gamesPlayed: 2,
   lastDailyBonusOn: null,
+  lastWinBonusOn: null,
+  streak: 0,
+  bestStreak: 0,
+  ratedMatches: 0,
+  bestTier: 0,
   createdAt: new Date('2024-01-01T00:00:00.000Z'),
   updatedAt: new Date('2024-01-01T00:00:00.000Z'),
 };
@@ -259,10 +265,14 @@ describe('ProfilesService.update', () => {
 });
 
 describe('ProfilesService.stats', () => {
-  it('counts finished wins and returns the latest coin movements, newest first', async () => {
+  it('counts wins across games and returns the latest coin movements, newest first', async () => {
     const prisma = makePrisma();
     prisma.profile.findUniqueOrThrow.mockResolvedValue(row);
     prisma.game.count.mockResolvedValue(1);
+    prisma.matchResult.groupBy.mockResolvedValue([
+      { game: 'UNO', won: true, _count: { _all: 2 } },
+      { game: 'UNO', won: false, _count: { _all: 3 } },
+    ]);
     const at = new Date('2026-10-07T12:00:00.000Z');
     prisma.coinTransaction.findMany.mockResolvedValue([
       {
@@ -278,8 +288,18 @@ describe('ProfilesService.stats', () => {
 
     await expect(service.stats('u1')).resolves.toEqual({
       gamesPlayed: 2,
-      wins: 1,
+      wins: 3,
       points: 10,
+      streak: 0,
+      bestStreak: 0,
+      perGame: [
+        { game: 'BINGO', played: 1, wins: 1 },
+        { game: 'UNO', played: 5, wins: 2 },
+        { game: 'TRUCO', played: 0, wins: 0 },
+        { game: 'DOMINO', played: 0, wins: 0 },
+        { game: 'SNAKE', played: 0, wins: 0 },
+        { game: 'BOMBER', played: 0, wins: 0 },
+      ],
       coinHistory: [
         { id: 't2', amount: -5, reason: 'CARD', createdAt: at.toISOString() },
       ],

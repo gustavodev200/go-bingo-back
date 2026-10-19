@@ -19,6 +19,8 @@ import {
   type BomberServerEventPayloads,
   type BomberSnapshot,
 } from '../contracts';
+import { ArenaService } from '../arena/arena.service';
+import { MatchTracker, rankSeats } from '../arena/match-tracker';
 import { DomainError } from '../core/domain-error';
 import { RANDOM_INT, type RandomInt } from '../core/random';
 import { DRAW_TIMER, type DrawTimer } from '../game/draw-timer';
@@ -67,6 +69,8 @@ interface Room {
   /** Last frame sent, replayed (without events) to whoever reconnects. */
   lastFrame: BomberFrame | null;
   result: BomberMatchResult | null;
+  /** Só humanos: CPU não entra na Arena (não dá para farmar contra bot). */
+  tracker: MatchTracker | null;
   seq: number;
   version: number;
   tickTimer: unknown;
@@ -105,6 +109,7 @@ export class BomberRoomsService implements OnModuleDestroy {
     @Inject(BOMBER_CONFIG) private readonly config: BomberConfig,
     @Inject(RANDOM_INT) private readonly random: RandomInt,
     @Inject(DRAW_TIMER) private readonly timer: DrawTimer,
+    private readonly arena: ArenaService,
   ) {}
 
   private now(): number {
@@ -143,6 +148,7 @@ export class BomberRoomsService implements OnModuleDestroy {
       round: null,
       lastFrame: null,
       result: null,
+      tracker: null,
       seq: 0,
       version: 0,
       tickTimer: undefined,
@@ -337,6 +343,12 @@ export class BomberRoomsService implements OnModuleDestroy {
     room.wins = Array<number>(BOMBER_SEATS).fill(0);
     room.roundNumber = 0;
     room.result = null;
+    room.tracker = new MatchTracker(
+      room.seats.flatMap((s, i) =>
+        s && !s.bot ? [{ seat: i, userId: s.userId }] : [],
+      ),
+      this.now(),
+    );
     this.startRound(room, [{ event: 'bomber:match_started', payload: {} }]);
   }
 
@@ -443,7 +455,26 @@ export class BomberRoomsService implements OnModuleDestroy {
     room.phase = 'FINISHED';
     room.result = { winner, wins: [...room.wins] };
     out.push({ event: 'bomber:match_over', payload: { ...room.result } });
+    this.settle(room, winner);
     this.publish(room, out);
+  }
+
+  /** Moedas e ranking: o campeão leva o pote; os demais ficam por rodadas vencidas. */
+  private settle(room: Room, winner: number): void {
+    const tracker = room.tracker;
+    room.tracker = null;
+    if (!tracker) return;
+    const placeOf = rankSeats(
+      tracker.seatList(),
+      (seat) => room.wins[seat] ?? 0,
+      new Set([winner]),
+    );
+    void this.arena.settleSafe({
+      matchId: tracker.matchId,
+      game: 'BOMBER',
+      durationMs: tracker.durationMs(this.now()),
+      participants: tracker.participants(placeOf),
+    });
   }
 
   private removePlayer(
@@ -457,6 +488,7 @@ export class BomberRoomsService implements OnModuleDestroy {
     room.seats[seat] = null;
     this.userRoom.delete(userId);
     this.publisher.removeFromRoom(userId, room.code);
+    if (room.phase === 'PLAYING') room.tracker?.markLeft(seat);
     room.round?.remove(seat);
 
     if (!room.seats.some((s) => s && !s.bot)) {

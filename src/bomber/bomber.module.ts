@@ -4,13 +4,14 @@
 import { Module } from '@nestjs/common';
 import { ENV, type Env } from '../core/env';
 import { DRAW_TIMER, realDrawTimer } from '../game/draw-timer';
+import { ArenaModule } from '../arena/arena.module';
 import { ProfilesModule } from '../profiles/profiles.module';
 import { BOMBER_PUBLISHER, SocketBomberPublisher } from './bomber-publisher';
 import { BOMBER_CONFIG, BomberRoomsService } from './bomber-rooms.service';
 import { BomberGateway } from './bomber.gateway';
 
 @Module({
-  imports: [ProfilesModule],
+  imports: [ProfilesModule, ArenaModule],
   providers: [
     SocketBomberPublisher,
     { provide: BOMBER_PUBLISHER, useExisting: SocketBomberPublisher },
