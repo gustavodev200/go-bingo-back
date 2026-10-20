@@ -52,7 +52,10 @@ describe('UnoGateway (Socket.IO integration)', () => {
         UnoRoomsService,
         {
           provide: ArenaService,
-          useValue: { settleSafe: jest.fn().mockResolvedValue(null) },
+          useValue: {
+            settleSafe: jest.fn().mockResolvedValue(null),
+            assertStake: jest.fn().mockResolvedValue(undefined),
+          },
         },
         SocketUnoPublisher,
         { provide: UNO_PUBLISHER, useExisting: SocketUnoPublisher },

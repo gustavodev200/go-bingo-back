@@ -2,21 +2,25 @@ import { Injectable, Logger } from '@nestjs/common';
 import { chargeUpTo, credit, saoPauloDay } from '../coins/ledger';
 import {
   PAIR_WINDOW_MS,
+  stakeLevel,
   TIERS,
   tierIndexFor,
   type ArenaGame,
   type MatchResultDto,
   type TierId,
 } from '../contracts';
+import { DomainError } from '../core/domain-error';
 import { isUniqueViolation } from '../core/prisma-errors';
 import { PrismaService } from '../core/prisma.service';
 import type { Prisma } from '../generated/prisma/client';
 import {
   planSettlement,
+  rakeOf,
   splitPot,
   type Entrant,
   type PlanEntry,
 } from './settlement';
+import { checkStake } from './stake-guard';
 
 export interface MatchParticipant {
   userId: string;
@@ -35,6 +39,8 @@ export interface MatchInput {
   bonusScale?: number;
   /** Já contado em outro ponto (bingo conta ao iniciar). */
   skipGamesPlayed?: boolean;
+  /** Aposta da mesa; ausente = mínimo do jogo. Mesas altas pagam taxa da casa sobre o pote. */
+  stake?: number;
 }
 
 type Tx = Prisma.TransactionClient;
@@ -89,6 +95,35 @@ export class ArenaService {
     }
   }
 
+  /**
+   * Confere se estes jogadores podem sentar numa mesa com esta aposta: o valor existe no jogo,
+   * todos têm a liga exigida e saldo para pagar a entrada. Chamado ao entrar, ao mudar a aposta
+   * e ao iniciar (a cobrança de verdade é na liquidação, até o saldo).
+   */
+  async assertStake(
+    game: ArenaGame,
+    stake: number,
+    userIds: readonly string[],
+  ): Promise<void> {
+    if (!stakeLevel(game, stake))
+      throw new DomainError(
+        'INVALID_PAYLOAD',
+        'Aposta inválida para este jogo',
+      );
+    if (userIds.length === 0) return;
+    const rows = await this.prisma.profile.findMany({
+      where: { id: { in: [...userIds] } },
+      select: { id: true, nickname: true, coins: true, points: true },
+    });
+    for (const r of rows)
+      checkStake(
+        game,
+        stake,
+        r,
+        userIds.length === 1 ? 'Você' : (r.nickname ?? 'Um jogador'),
+      );
+  }
+
   async latest(userId: string, since?: Date): Promise<MatchResultDto | null> {
     const row = await this.prisma.matchResult.findFirst({
       where: { userId, ...(since ? { createdAt: { gt: since } } : {}) },
@@ -139,6 +174,7 @@ export class ArenaService {
       entrants,
       durationMs: input.durationMs,
       bonusScale: input.bonusScale,
+      stake: input.stake,
       pairMatches,
     });
     const entries = [...plan.entries].sort((a, b) =>
@@ -163,7 +199,9 @@ export class ArenaService {
           input.matchId,
         )
       : new Map<string, number>();
-    const pot = sum([...staked.values()]) + sum([...penalised.values()]);
+    const gross = sum([...staked.values()]) + sum([...penalised.values()]);
+    const level = stakeLevel(input.game, entries[0].stake);
+    const pot = gross - rakeOf(gross, level?.rake ?? 0);
     const prizes = new Map<string, number>();
     const ordered = plan.entries;
     splitPot(

@@ -18,6 +18,8 @@ import {
   type BomberServerEventName,
   type BomberServerEventPayloads,
   type BomberSnapshot,
+  minStake,
+  stakeLevel,
 } from '../contracts';
 import { ArenaService } from '../arena/arena.service';
 import { MatchTracker, rankSeats } from '../arena/match-tracker';
@@ -60,6 +62,8 @@ interface Room {
   code: string;
   hostId: string;
   isPublic: boolean;
+  /** Aposta de cada jogador (Arena); só muda no lobby. */
+  stake: number;
   rules: BomberRules;
   phase: BomberRoomPhase;
   seats: (SeatState | null)[];
@@ -140,6 +144,7 @@ export class BomberRoomsService implements OnModuleDestroy {
       code,
       hostId: player.userId,
       isPublic,
+      stake: minStake('BOMBER'),
       rules: { ...DEFAULT_BOMBER_RULES },
       phase: 'LOBBY',
       seats: Array.from({ length: BOMBER_SEATS }, () => null),
@@ -212,11 +217,43 @@ export class BomberRoomsService implements OnModuleDestroy {
         code: room.code,
         hostNickname: host.nickname,
         hostCharacter: host.character,
+        stake: room.stake,
         players,
         rules: { ...room.rules },
       });
     }
     return out.sort((a, b) => b.players - a.players);
+  }
+
+  /** Aposta da próxima partida; só no lobby. Com valor novo, todo mundo confirma de novo. */
+  setStake(userId: string, stake: number): void {
+    const room = this.requireRoom(userId);
+    this.requirePhase(room, 'LOBBY');
+    if (room.hostId !== userId)
+      throw new DomainError('NOT_HOST', 'Só o anfitrião muda a aposta');
+    if (!stakeLevel('BOMBER', stake))
+      throw new DomainError(
+        'INVALID_PAYLOAD',
+        'Aposta inválida para este jogo',
+      );
+    if (room.stake === stake) return;
+    room.stake = stake;
+    for (const s of room.seats) if (s && !s.bot) s.ready = false;
+    this.publish(room, []);
+  }
+
+  /** Aposta que quem chega precisa cobrir; null = já tem lugar aqui (reconexão) ou a mesa não existe. */
+  stakeToJoin(code: string, userId: string): number | null {
+    const room = this.rooms.get(code);
+    if (!room || this.seatOf(room, userId) !== null) return null;
+    return room.stake;
+  }
+
+  /** Quem aposta se a partida começar agora: os humanos sentados (sozinho contra CPU não vale nada). */
+  stakeCheck(userId: string): { stake: number; userIds: string[] } {
+    const room = this.requireRoom(userId);
+    const userIds = room.seats.flatMap((s) => (s && !s.bot ? [s.userId] : []));
+    return { stake: room.stake, userIds: userIds.length >= 2 ? userIds : [] };
   }
 
   setVisibility(userId: string, isPublic: boolean): void {
@@ -472,6 +509,7 @@ export class BomberRoomsService implements OnModuleDestroy {
     void this.arena.settleSafe({
       matchId: tracker.matchId,
       game: 'BOMBER',
+      stake: room.stake,
       durationMs: tracker.durationMs(this.now()),
       participants: tracker.participants(placeOf),
     });
@@ -553,6 +591,7 @@ export class BomberRoomsService implements OnModuleDestroy {
       version: room.version,
       hostId: room.hostId,
       isPublic: room.isPublic,
+      stake: room.stake,
       rules: { ...room.rules },
       phase: room.phase,
       lobbyStatus:

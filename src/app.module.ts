@@ -10,6 +10,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { ArenaModule } from './arena/arena.module';
 import { BomberModule } from './bomber/bomber.module';
 import { CoreModule } from './core/core.module';
+import { DiamondsModule } from './diamonds/diamonds.module';
 import { DominoModule } from './domino/domino.module';
 import { HttpThrottlerGuard } from './core/http-throttler.guard';
 import { InfiltradoModule } from './infiltrado/infiltrado.module';
@@ -33,6 +34,7 @@ import { VoiceModule } from './voice/voice.module';
     GameModule,
     RankingModule,
     ArenaModule,
+    DiamondsModule,
     ScheduleModule.forRoot(),
     GuestsModule,
     TrucoModule,

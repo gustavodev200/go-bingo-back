@@ -25,10 +25,12 @@ import {
   dominoReadySchema,
   dominoVisibilitySchema,
   userChannel,
+  setStakeSchema,
   type Ack,
   type DominoSnapshot,
 } from '../contracts';
 import { JwtVerifier, type AuthUser } from '../core/auth/jwt-verifier';
+import { ArenaService } from '../arena/arena.service';
 import { DomainError } from '../core/domain-error';
 import { RateLimiter } from '../game/rate-limiter';
 import { ProfilesService } from '../profiles/profiles.service';
@@ -73,6 +75,7 @@ export class DominoGateway
     private readonly profiles: ProfilesService,
     private readonly tables: DominoRoomsService,
     private readonly publisher: SocketDominoPublisher,
+    private readonly arena: ArenaService,
   ) {}
 
   afterInit(server: Namespace): void {
@@ -172,6 +175,25 @@ export class DominoGateway
     );
   }
 
+  /** Host only: the bet of the next match. The host must be able to cover it. */
+  @SubscribeMessage(DominoClientEvents.SET_STAKE)
+  onSetStake(
+    @ConnectedSocket() socket: DominoSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      setStakeSchema,
+      body,
+      async (user, { stake }) => {
+        await this.arena.assertStake('DOMINO', stake, [user.id]);
+        this.tables.setStake(user.id, stake);
+        return null;
+      },
+    );
+  }
+
   @SubscribeMessage(DominoClientEvents.JOIN)
   onJoin(
     @ConnectedSocket() socket: DominoSocket,
@@ -183,7 +205,11 @@ export class DominoGateway
       dominoJoinSchema,
       body,
       async (_, { code }): Promise<DominoSnapshot> => {
-        const snapshot = this.tables.join(code, this.player(socket), socket.id);
+        const player = this.player(socket);
+        const stake = this.tables.stakeToJoin(code, player.userId);
+        if (stake !== null)
+          await this.arena.assertStake('DOMINO', stake, [player.userId]);
+        const snapshot = this.tables.join(code, player, socket.id);
         await socket.join(roomChannel(code));
         return snapshot;
       },
@@ -250,14 +276,22 @@ export class DominoGateway
     @ConnectedSocket() socket: DominoSocket,
     @MessageBody() body: unknown,
   ) {
-    return this.handle(socket, 'default', dominoEmptySchema, body, (user) => {
-      this.tables.start(user.id);
-      this.logger.log({
-        event: 'domino_match_started',
-        roomCode: this.tables.roomOf(user.id),
-      });
-      return Promise.resolve(null);
-    });
+    return this.handle(
+      socket,
+      'default',
+      dominoEmptySchema,
+      body,
+      async (user) => {
+        const check = this.tables.stakeCheck(user.id);
+        await this.arena.assertStake('DOMINO', check.stake, check.userIds);
+        this.tables.start(user.id);
+        this.logger.log({
+          event: 'domino_match_started',
+          roomCode: this.tables.roomOf(user.id),
+        });
+        return null;
+      },
+    );
   }
 
   @SubscribeMessage(DominoClientEvents.REMATCH)

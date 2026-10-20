@@ -52,7 +52,10 @@ describe('TrucoGateway (Socket.IO integration)', () => {
         TrucoRoomsService,
         {
           provide: ArenaService,
-          useValue: { settleSafe: jest.fn().mockResolvedValue(null) },
+          useValue: {
+            settleSafe: jest.fn().mockResolvedValue(null),
+            assertStake: jest.fn().mockResolvedValue(undefined),
+          },
         },
         SocketTrucoPublisher,
         { provide: TRUCO_PUBLISHER, useExisting: SocketTrucoPublisher },

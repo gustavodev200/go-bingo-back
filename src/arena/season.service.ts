@@ -1,7 +1,11 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { credit } from '../coins/ledger';
-import { WEEKLY_MIN_MATCHES, WEEKLY_PRIZES } from '../contracts';
+import { credit, creditDiamonds } from '../coins/ledger';
+import {
+  WEEKLY_DIAMONDS,
+  WEEKLY_MIN_MATCHES,
+  WEEKLY_PRIZES,
+} from '../contracts';
 import { isUniqueViolation } from '../core/prisma-errors';
 import { PrismaService } from '../core/prisma.service';
 import { addWeeks, weekKey, weekStart } from './week';
@@ -51,6 +55,7 @@ export class SeasonService implements OnApplicationBootstrap {
     let paid = 0;
     for (const [i, winner] of top.entries()) {
       const coins = WEEKLY_PRIZES[i];
+      const diamonds = WEEKLY_DIAMONDS[i] ?? 0;
       try {
         await this.prisma.$transaction(async (tx) => {
           await tx.seasonPayout.create({
@@ -59,10 +64,13 @@ export class SeasonService implements OnApplicationBootstrap {
               rank: i + 1,
               userId: winner.id,
               coins,
+              diamonds,
               points: winner.points,
             },
           });
           await credit(tx, winner.id, coins, 'SEASON');
+          if (diamonds > 0)
+            await creditDiamonds(tx, winner.id, diamonds, 'SEASON');
         });
         paid++;
       } catch (error) {

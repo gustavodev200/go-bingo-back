@@ -370,3 +370,66 @@ describe('UnoRoomsService — match', () => {
     expect(state().seats[0]!.ready).toBe(false);
   });
 });
+
+describe('UnoRoomsService — table stake', () => {
+  it('starts at the game minimum and shows it in the state and the public list', () => {
+    const { service, state, publisher } = setup();
+    const code = service.create(ana, 's0', true).state.code;
+    expect(state().stake).toBe(30);
+    expect(publisher.publicList()[0]).toMatchObject({ code, stake: 30 });
+  });
+
+  it('only the host changes it, only in the lobby, only to an offered value', () => {
+    const { service, state } = setup();
+    const code = service.create(ana, 's0', true).state.code;
+    service.join(code, bia, 's1');
+    expect(codeOf(() => service.setStake(bia.userId, 60))).toBe('NOT_HOST');
+    expect(codeOf(() => service.setStake(ana.userId, 61))).toBe(
+      'INVALID_PAYLOAD',
+    );
+    service.setStake(ana.userId, 150);
+    expect(state().stake).toBe(150);
+  });
+
+  it('a new value makes everybody confirm again', () => {
+    const { service, state } = setup();
+    const code = service.create(ana, 's0', true).state.code;
+    service.join(code, bia, 's1');
+    service.setReady(ana.userId, true);
+    service.setReady(bia.userId, true);
+    service.setStake(ana.userId, 60);
+    expect(state().seats.filter((s) => s?.ready)).toHaveLength(0);
+  });
+
+  it('tells the gateway what newcomers and the start must cover', () => {
+    const { service } = setup();
+    const code = service.create(ana, 's0', true).state.code;
+    service.setStake(ana.userId, 60);
+    expect(service.stakeToJoin(code, bia.userId)).toBe(60);
+    expect(service.stakeToJoin(code, ana.userId)).toBeNull(); // reconexão
+    expect(service.stakeToJoin('ZZZZZZ', bia.userId)).toBeNull();
+    expect(service.stakeCheck(ana.userId)).toEqual({ stake: 60, userIds: [] });
+    service.join(code, bia, 's1');
+    expect(service.stakeCheck(ana.userId)).toEqual({
+      stake: 60,
+      userIds: [ana.userId, bia.userId],
+    });
+  });
+
+  it('settles the match with the table stake', () => {
+    const ctx = setup();
+    const code = ctx.service.create(ana, 's0', true).state.code;
+    ctx.service.join(code, bia, 's1');
+    ctx.service.setStake(ana.userId, 300);
+    ctx.service.setReady(ana.userId, true);
+    ctx.service.setReady(bia.userId, true);
+    ctx.service.start(ana.userId);
+    expect(codeOf(() => ctx.service.setStake(ana.userId, 30))).toBe(
+      'INVALID_STATE',
+    );
+    ctx.service.leave(bia.userId);
+    expect(ctx.arena.settleSafe).toHaveBeenCalledWith(
+      expect.objectContaining({ game: 'UNO', stake: 300 }),
+    );
+  });
+});

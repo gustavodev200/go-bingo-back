@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { minStake } from './arena';
 import {
   MAX_DRAW_INTERVAL_MS,
   MIN_DRAW_INTERVAL_MS,
@@ -32,6 +33,8 @@ export const createRoomSchema = z.object({
     .optional(),
   /** Modo de vitória; ausente = cartela cheia. */
   winPattern: winPatternSchema.optional(),
+  /** Aposta de cada jogador (STAKE_LEVELS do bingo); ausente = mínimo. */
+  stake: z.number().int().positive().optional(),
 });
 export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 
@@ -45,6 +48,7 @@ export const publicRoomSchema = z.object({
   maxPlayers: z.number().int(),
   status: roomStatusSchema,
   winPattern: winPatternSchema,
+  stake: z.number().int().default(minStake('BINGO')),
 });
 export type PublicRoom = z.infer<typeof publicRoomSchema>;
 
@@ -83,6 +87,7 @@ export const roomSnapshotSchema = z.object({
   isPublic: z.boolean(),
   status: roomStatusSchema,
   winPattern: winPatternSchema,
+  stake: z.number().int().default(minStake('BINGO')),
   members: z.array(memberSchema),
   myCard: cardSchema.nullable(),
   game: gameStateSchema.nullable(),

@@ -38,6 +38,9 @@ const row = {
   bestStreak: 0,
   ratedMatches: 0,
   bestTier: 0,
+  diamonds: 3,
+  diamondStreak: 0,
+  lastDiamondOn: null,
   createdAt: new Date('2024-01-01T00:00:00.000Z'),
   updatedAt: new Date('2024-01-01T00:00:00.000Z'),
 };
@@ -203,6 +206,7 @@ describe('ProfilesService.update', () => {
       character: null,
       points: 10,
       coins: 120,
+      diamonds: 3,
     });
   });
 
@@ -260,6 +264,7 @@ describe('ProfilesService.update', () => {
       character: null,
       points: 10,
       coins: 120,
+      diamonds: 3,
     });
   });
 });

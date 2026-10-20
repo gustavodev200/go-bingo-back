@@ -51,7 +51,10 @@ describe('InfGateway (Socket.IO integration)', () => {
         InfRoomsService,
         {
           provide: ArenaService,
-          useValue: { settleSafe: jest.fn().mockResolvedValue(null) },
+          useValue: {
+            settleSafe: jest.fn().mockResolvedValue(null),
+            assertStake: jest.fn().mockResolvedValue(undefined),
+          },
         },
         SocketInfPublisher,
         { provide: INF_PUBLISHER, useExisting: SocketInfPublisher },

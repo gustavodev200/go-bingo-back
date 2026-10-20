@@ -1,9 +1,11 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   DEFAULT_DRAW_INTERVAL_MS,
+  minStake,
   type CreateRoomInput,
   type PublicRoom,
 } from '../contracts';
+import { checkStake } from '../arena/stake-guard';
 import { ENV, type Env } from '../core/env';
 import { DomainError } from '../core/domain-error';
 import { isUniqueViolation } from '../core/prisma-errors';
@@ -37,6 +39,8 @@ export class RoomsService {
         'NICKNAME_REQUIRED',
         'Escolha um apelido antes de criar uma sala',
       );
+    const stake = input.stake ?? minStake('BINGO');
+    checkStake('BINGO', stake, profile);
 
     for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt++) {
       const code = generateRoomCode(this.random);
@@ -44,6 +48,7 @@ export class RoomsService {
         await this.prisma.room.create({
           data: {
             ...input,
+            stake,
             drawIntervalMs:
               input.drawIntervalMs ??
               this.env?.DEFAULT_DRAW_INTERVAL_MS ??
@@ -84,6 +89,7 @@ export class RoomsService {
       maxPlayers: r.maxPlayers,
       status: r.status,
       winPattern: r.winPattern,
+      stake: r.stake,
     }));
   }
 
@@ -101,6 +107,7 @@ export class RoomsService {
       maxPlayers: room.maxPlayers,
       status: room.status,
       winPattern: room.winPattern,
+      stake: room.stake,
     };
   }
 }

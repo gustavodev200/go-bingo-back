@@ -50,7 +50,10 @@ describe('BomberGateway (Socket.IO integration)', () => {
         BomberRoomsService,
         {
           provide: ArenaService,
-          useValue: { settleSafe: jest.fn().mockResolvedValue(null) },
+          useValue: {
+            settleSafe: jest.fn().mockResolvedValue(null),
+            assertStake: jest.fn().mockResolvedValue(undefined),
+          },
         },
         SocketBomberPublisher,
         { provide: BOMBER_PUBLISHER, useExisting: SocketBomberPublisher },

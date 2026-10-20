@@ -16,6 +16,10 @@ function makePrisma() {
     // updateMany = cobrança da cartela (saldo suficiente por padrão)
     profile: {
       findUnique: jest.fn(),
+      // quem compra a primeira cartela precisa cobrir a aposta da sala
+      findUniqueOrThrow: jest
+        .fn()
+        .mockResolvedValue({ coins: 1000, points: 0 }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     coinTransaction: { create: jest.fn() },
@@ -473,7 +477,11 @@ describe('MembershipService.generateCard', () => {
 
   it('rejects a caller who is not a room member', async () => {
     const prisma = makePrisma();
-    prisma.room.findUnique.mockResolvedValue({ id: 'r1', status: 'WAITING' });
+    prisma.room.findUnique.mockResolvedValue({
+      id: 'r1',
+      status: 'WAITING',
+      stake: 20,
+    });
     prisma.roomMember.findUnique.mockResolvedValue(null);
     const service = new MembershipService(
       prisma as unknown as PrismaService,
@@ -487,7 +495,11 @@ describe('MembershipService.generateCard', () => {
 
   it('creates a fresh card when the member has none yet', async () => {
     const prisma = makePrisma();
-    prisma.room.findUnique.mockResolvedValue({ id: 'r1', status: 'WAITING' });
+    prisma.room.findUnique.mockResolvedValue({
+      id: 'r1',
+      status: 'WAITING',
+      stake: 20,
+    });
     prisma.roomMember.findUnique.mockResolvedValue({ cardRegens: 0 });
     prisma.card.findFirst.mockResolvedValue(null);
     prisma.card.create.mockResolvedValue({ id: 'c1', grid: [1, 2, 3] });
@@ -505,7 +517,11 @@ describe('MembershipService.generateCard', () => {
 
   it('rejects regenerating past the regen limit', async () => {
     const prisma = makePrisma();
-    prisma.room.findUnique.mockResolvedValue({ id: 'r1', status: 'WAITING' });
+    prisma.room.findUnique.mockResolvedValue({
+      id: 'r1',
+      status: 'WAITING',
+      stake: 20,
+    });
     prisma.roomMember.findUnique.mockResolvedValue({
       cardRegens: MAX_CARD_REGENS,
     });
@@ -522,7 +538,11 @@ describe('MembershipService.generateCard', () => {
 
   it('regenerates the existing card and bumps the regen counter', async () => {
     const prisma = makePrisma();
-    prisma.room.findUnique.mockResolvedValue({ id: 'r1', status: 'WAITING' });
+    prisma.room.findUnique.mockResolvedValue({
+      id: 'r1',
+      status: 'WAITING',
+      stake: 20,
+    });
     prisma.roomMember.findUnique.mockResolvedValue({
       cardRegens: MAX_CARD_REGENS - 1,
     });
@@ -549,7 +569,11 @@ describe('MembershipService.generateCard', () => {
 
   it('charges CARD_COST coins for every card, first one and regenerations', async () => {
     const prisma = makePrisma();
-    prisma.room.findUnique.mockResolvedValue({ id: 'r1', status: 'WAITING' });
+    prisma.room.findUnique.mockResolvedValue({
+      id: 'r1',
+      status: 'WAITING',
+      stake: 20,
+    });
     prisma.roomMember.findUnique.mockResolvedValue({ cardRegens: 0 });
     prisma.card.findFirst.mockResolvedValue(null);
     prisma.card.create.mockResolvedValue({ id: 'c1', grid: [1] });
@@ -573,9 +597,38 @@ describe('MembershipService.generateCard', () => {
     });
   });
 
+  it('the first card needs the room stake + the card (sitting at the table)', async () => {
+    const prisma = makePrisma();
+    prisma.room.findUnique.mockResolvedValue({
+      id: 'r1',
+      status: 'WAITING',
+      stake: 40,
+    });
+    prisma.roomMember.findUnique.mockResolvedValue({ cardRegens: 0 });
+    prisma.card.findFirst.mockResolvedValue(null);
+    prisma.profile.findUniqueOrThrow.mockResolvedValue({
+      coins: 44,
+      points: 0,
+    });
+    const service = new MembershipService(
+      prisma as unknown as PrismaService,
+      random,
+    );
+
+    await expect(service.generateCard('ABC123', 'u1')).rejects.toMatchObject({
+      code: 'INSUFFICIENT_COINS',
+      message: 'Você precisa de 45 moedas para esta mesa',
+    });
+    expect(prisma.card.create).not.toHaveBeenCalled();
+  });
+
   it('refuses the card without enough coins and creates nothing', async () => {
     const prisma = makePrisma();
-    prisma.room.findUnique.mockResolvedValue({ id: 'r1', status: 'WAITING' });
+    prisma.room.findUnique.mockResolvedValue({
+      id: 'r1',
+      status: 'WAITING',
+      stake: 20,
+    });
     prisma.roomMember.findUnique.mockResolvedValue({ cardRegens: 0 });
     prisma.card.findFirst.mockResolvedValue(null);
     prisma.profile.updateMany.mockResolvedValue({ count: 0 });

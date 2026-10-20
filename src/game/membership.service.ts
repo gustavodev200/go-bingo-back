@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { checkStake } from '../arena/stake-guard';
 import { charge } from '../coins/ledger';
 import { CARD_COST, MAX_CARD_REGENS, type Card } from '../contracts';
 import { DomainError } from '../core/domain-error';
@@ -156,6 +157,13 @@ export class MembershipService {
         `Você já trocou a cartela ${MAX_CARD_REGENS} vezes`,
       );
 
+    // A primeira cartela é o "sentar na mesa": precisa cobrir a aposta + a cartela.
+    if (!existing) {
+      const me = await this.prisma.profile.findUniqueOrThrow({
+        where: { id: userId },
+      });
+      checkStake('BINGO', room.stake, me, 'Você', CARD_COST);
+    }
     // Cada cartela (primeira ou troca) custa CARD_COST; sem saldo, nada muda.
     return this.prisma.$transaction(async (tx) => {
       await charge(tx, userId, CARD_COST, 'CARD');

@@ -17,6 +17,11 @@ export const errorCodeSchema = z.enum([
   'NOT_DRAWN',
   'BINGO_INVALID',
   'INSUFFICIENT_COINS',
+  /** Mesa acima da liga do jogador. */
+  'STAKE_LOCKED',
+  'INSUFFICIENT_DIAMONDS',
+  /** Recurso só para conta logada (convidado não pode). */
+  'GUEST_NOT_ALLOWED',
   'NOT_YOUR_TURN',
   'INVALID_MOVE',
   'INTERNAL',

@@ -25,10 +25,12 @@ import {
   bomberVisibilitySchema,
   roomChannel,
   userChannel,
+  setStakeSchema,
   type Ack,
   type BomberSnapshot,
 } from '../contracts';
 import { JwtVerifier, type AuthUser } from '../core/auth/jwt-verifier';
+import { ArenaService } from '../arena/arena.service';
 import { DomainError } from '../core/domain-error';
 import { RateLimiter } from '../game/rate-limiter';
 import { ProfilesService } from '../profiles/profiles.service';
@@ -71,6 +73,7 @@ export class BomberGateway
     private readonly profiles: ProfilesService,
     private readonly rooms: BomberRoomsService,
     private readonly publisher: SocketBomberPublisher,
+    private readonly arena: ArenaService,
   ) {}
 
   afterInit(server: Namespace): void {
@@ -182,6 +185,24 @@ export class BomberGateway
     );
   }
 
+  /** Host only: the bet of the next match. The host must be able to cover it. */
+  @SubscribeMessage(BomberClientEvents.SET_STAKE)
+  onSetStake(
+    @ConnectedSocket() socket: BomberSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      setStakeSchema,
+      body,
+      async (user, { stake }) => {
+        await this.arena.assertStake('BOMBER', stake, [user.id]);
+        return this.run(() => this.rooms.setStake(user.id, stake));
+      },
+    );
+  }
+
   @SubscribeMessage(BomberClientEvents.JOIN)
   onJoin(
     @ConnectedSocket() socket: BomberSocket,
@@ -193,7 +214,11 @@ export class BomberGateway
       bomberJoinSchema,
       body,
       async (_, { code }): Promise<BomberSnapshot> => {
-        const snapshot = this.rooms.join(code, this.player(socket), socket.id);
+        const player = this.player(socket);
+        const stake = this.rooms.stakeToJoin(code, player.userId);
+        if (stake !== null)
+          await this.arena.assertStake('BOMBER', stake, [player.userId]);
+        const snapshot = this.rooms.join(code, player, socket.id);
         await socket.join(roomChannel(code));
         return snapshot;
       },
@@ -277,14 +302,22 @@ export class BomberGateway
     @ConnectedSocket() socket: BomberSocket,
     @MessageBody() body: unknown,
   ) {
-    return this.handle(socket, 'default', bomberEmptySchema, body, (user) =>
-      this.run(() => {
-        this.rooms.start(user.id);
-        this.logger.log({
-          event: 'bomber_match_started',
-          roomCode: this.rooms.roomOf(user.id),
+    return this.handle(
+      socket,
+      'default',
+      bomberEmptySchema,
+      body,
+      async (user) => {
+        const check = this.rooms.stakeCheck(user.id);
+        await this.arena.assertStake('BOMBER', check.stake, check.userIds);
+        return this.run(() => {
+          this.rooms.start(user.id);
+          this.logger.log({
+            event: 'bomber_match_started',
+            roomCode: this.rooms.roomOf(user.id),
+          });
         });
-      }),
+      },
     );
   }
 
