@@ -21,6 +21,7 @@ import {
   gaudSetSettingsSchema,
   gaudPlayCardSchema,
   gaudReadySchema,
+  gaudAddBotSchema,
   gaudRemoveBotSchema,
   gaudCallSchema,
   gaudRespondSchema,
@@ -285,10 +286,16 @@ export class GaudGateway
     @ConnectedSocket() socket: GaudSocket,
     @MessageBody() body: unknown,
   ) {
-    return this.handle(socket, 'default', gaudEmptySchema, body, (user) => {
-      this.tables.addBot(user.id);
-      return Promise.resolve(null);
-    });
+    return this.handle(
+      socket,
+      'default',
+      gaudAddBotSchema,
+      body,
+      (user, { seat }) => {
+        this.tables.addBot(user.id, seat as GaudSeat | undefined);
+        return Promise.resolve(null);
+      },
+    );
   }
 
   @SubscribeMessage(GaudClientEvents.REMOVE_BOT)

@@ -256,11 +256,12 @@ export class DominoRoomsService implements OnModuleDestroy {
   }
 
   /** O anfitrião completa a mesa com uma CPU (sempre pronta). */
-  addBot(userId: string): void {
+  addBot(userId: string, seat?: number): void {
     const room = this.requireHost(userId, 'Só o anfitrião chama a CPU');
     this.requirePhase(room, 'LOBBY');
-    const free = room.seats.findIndex((s) => s === null);
-    if (free < 0) throw new DomainError('ROOM_FULL', 'A mesa está cheia');
+    const free = seat ?? room.seats.findIndex((s) => s === null);
+    if (free < 0 || room.seats[free])
+      throw new DomainError('ROOM_FULL', 'Esse lugar não está vago');
     room.botCount++;
     room.seats[free] = {
       userId: cpuUserId(room.botCount),

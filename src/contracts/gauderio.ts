@@ -418,6 +418,15 @@ export const gaudTakeSeatSchema = z.object({
   seat: z.number().int().min(0).max(3),
 });
 export const gaudReadySchema = z.object({ ready: z.boolean() });
+/** Sem `seat`, a CPU senta no primeiro lugar vago (com duplas, o anfitrião escolhe o lado). */
+export const gaudAddBotSchema = z.object({
+  seat: z
+    .number()
+    .int()
+    .min(0)
+    .max(GAUD_MAX_SEATS - 1)
+    .optional(),
+});
 export const gaudRemoveBotSchema = z.object({
   seat: z
     .number()

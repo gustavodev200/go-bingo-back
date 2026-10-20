@@ -23,6 +23,7 @@ import {
   dominoPlaySchema,
   dominoSetRulesSchema,
   dominoReadySchema,
+  dominoAddBotSchema,
   dominoRemoveBotSchema,
   dominoVisibilitySchema,
   userChannel,
@@ -277,10 +278,16 @@ export class DominoGateway
     @ConnectedSocket() socket: DominoSocket,
     @MessageBody() body: unknown,
   ) {
-    return this.handle(socket, 'default', dominoEmptySchema, body, (user) => {
-      this.tables.addBot(user.id);
-      return Promise.resolve(null);
-    });
+    return this.handle(
+      socket,
+      'default',
+      dominoAddBotSchema,
+      body,
+      (user, { seat }) => {
+        this.tables.addBot(user.id, seat);
+        return Promise.resolve(null);
+      },
+    );
   }
 
   @SubscribeMessage(DominoClientEvents.REMOVE_BOT)

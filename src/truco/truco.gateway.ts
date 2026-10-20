@@ -21,6 +21,7 @@ import {
   trucoModeSchema,
   trucoPlayCardSchema,
   trucoReadySchema,
+  trucoAddBotSchema,
   trucoRemoveBotSchema,
   trucoRequestBetSchema,
   trucoRespondBetSchema,
@@ -293,10 +294,16 @@ export class TrucoGateway
     @ConnectedSocket() socket: TrucoSocket,
     @MessageBody() body: unknown,
   ) {
-    return this.handle(socket, 'default', trucoEmptySchema, body, (user) => {
-      this.tables.addBot(user.id);
-      return Promise.resolve(null);
-    });
+    return this.handle(
+      socket,
+      'default',
+      trucoAddBotSchema,
+      body,
+      (user, { seat }) => {
+        this.tables.addBot(user.id, seat as Seat | undefined);
+        return Promise.resolve(null);
+      },
+    );
   }
 
   @SubscribeMessage(TrucoClientEvents.REMOVE_BOT)

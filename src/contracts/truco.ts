@@ -344,6 +344,15 @@ export const trucoTakeSeatSchema = z.object({
   seat: z.number().int().min(0).max(3),
 });
 export const trucoReadySchema = z.object({ ready: z.boolean() });
+/** Sem `seat`, a CPU senta no primeiro lugar vago (com duplas, o anfitrião escolhe o lado). */
+export const trucoAddBotSchema = z.object({
+  seat: z
+    .number()
+    .int()
+    .min(0)
+    .max(TRUCO_SEATS - 1)
+    .optional(),
+});
 export const trucoRemoveBotSchema = z.object({
   seat: z
     .number()

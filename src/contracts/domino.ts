@@ -235,6 +235,15 @@ export const dominoVisibilitySchema = z.object({ isPublic: z.boolean() });
 export const dominoSetRulesSchema = z.object({ rules: dominoRulesSchema });
 export const dominoJoinSchema = z.object({ code: roomCodeSchema });
 export const dominoReadySchema = z.object({ ready: z.boolean() });
+/** Sem `seat`, a CPU senta no primeiro lugar vago (com duplas, o anfitrião escolhe o lado). */
+export const dominoAddBotSchema = z.object({
+  seat: z
+    .number()
+    .int()
+    .min(0)
+    .max(DOMINO_SEATS - 1)
+    .optional(),
+});
 export const dominoRemoveBotSchema = z.object({
   seat: z
     .number()

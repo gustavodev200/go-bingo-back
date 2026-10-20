@@ -674,6 +674,15 @@ describe('TrucoRoomsService — CPU', () => {
     expect(state(t).seats[2]).toBeNull();
   });
 
+  it('the host picks the seat of the CPU (partner or opponent)', () => {
+    const t = setup();
+    t.service.create(ana, 's-ana');
+    t.service.addBot(ana.userId, 2);
+    expect(state(t).seats[2]).toMatchObject({ bot: true });
+    expect(state(t).seats[1]).toBeNull();
+    expect(errorCode(() => t.service.addBot(ana.userId, 2))).toBe('ROOM_FULL');
+  });
+
   it('a lone player with three CPUs plays a whole match, settled as a CPU match', () => {
     const t = setup();
     t.service.create(ana, 's-ana');

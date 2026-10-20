@@ -243,13 +243,14 @@ export class TrucoRoomsService implements OnModuleDestroy {
   }
 
   /** O anfitrião completa a mesa com uma CPU (sempre pronta). */
-  addBot(userId: string): void {
+  addBot(userId: string, seat?: Seat): void {
     const room = this.requireRoom(userId);
     this.requirePhase(room, 'LOBBY');
     if (room.hostId !== userId)
       throw new DomainError('NOT_HOST', 'Só o anfitrião chama a CPU');
-    const free = room.seats.findIndex((s) => s === null);
-    if (free < 0) throw new DomainError('ROOM_FULL', 'A mesa está cheia');
+    const free = seat ?? room.seats.findIndex((s) => s === null);
+    if (free < 0 || room.seats[free])
+      throw new DomainError('ROOM_FULL', 'Esse lugar não está vago');
     room.botCount++;
     room.seats[free] = {
       userId: cpuUserId(room.botCount),
