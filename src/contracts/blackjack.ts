@@ -380,8 +380,8 @@ export interface BjServerEventPayloads {
   'blackjack:match_started': { seq: number; rounds: number };
   'blackjack:round_started': { seq: number; round: number };
   'blackjack:shuffled': { seq: number };
-  /** Cartas iniciais na mesa; `insurance` = o dealer mostra um Ás. */
-  'blackjack:dealt': { seq: number; insurance: boolean };
+  /** Cartas iniciais na mesa; `insurance` = o dealer mostra um Ás; `blackjacks` = lugares com 21 natural. */
+  'blackjack:dealt': { seq: number; insurance: boolean; blackjacks: number[] };
   'blackjack:acted': {
     seq: number;
     seat: number;

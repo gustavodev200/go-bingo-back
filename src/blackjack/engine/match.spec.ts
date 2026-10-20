@@ -138,7 +138,8 @@ describe('BjMatch — one round', () => {
 
   it('pays a natural 3:2 or 6:5 and the dealer does not draw', () => {
     const m = match(['AS', '9H', 'KD', '7C']);
-    m.bet(0, 100);
+    const out = m.bet(0, 100);
+    expect(out[0]).toMatchObject({ payload: { blackjacks: [0] } });
     expect(m.stage).toBe('SETTLED');
     expect(m.publicView().dealer.cards).toEqual(['9H', '7C']);
     expect(player(m).hands[0]).toMatchObject({

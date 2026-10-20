@@ -356,7 +356,15 @@ export class BjMatch {
     for (const p of seated)
       if (isBlackjack(p.hands[0].cards)) p.hands[0].status = 'blackjack';
     const aceUp = bjRank(this.dealer[0]) === 'A';
-    this.announce({ event: 'blackjack:dealt', payload: { insurance: aceUp } });
+    this.announce({
+      event: 'blackjack:dealt',
+      payload: {
+        insurance: aceUp,
+        blackjacks: seated
+          .filter((p) => p.hands[0].status === 'blackjack')
+          .map((p) => p.seat),
+      },
+    });
     if (aceUp) {
       this.stageNow = 'INSURANCE';
       this.token++;
