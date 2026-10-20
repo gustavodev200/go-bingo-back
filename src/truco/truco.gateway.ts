@@ -28,11 +28,13 @@ import {
   trucoTenDecisionSchema,
   trucoVisibilitySchema,
   userChannel,
+  setStakeSchema,
   type Ack,
   type Seat,
   type TrucoSnapshot,
 } from '../contracts';
 import { JwtVerifier, type AuthUser } from '../core/auth/jwt-verifier';
+import { ArenaService } from '../arena/arena.service';
 import { DomainError } from '../core/domain-error';
 import { RateLimiter } from '../game/rate-limiter';
 import { ProfilesService } from '../profiles/profiles.service';
@@ -77,6 +79,7 @@ export class TrucoGateway
     private readonly profiles: ProfilesService,
     private readonly tables: TrucoRoomsService,
     private readonly publisher: SocketTrucoPublisher,
+    private readonly arena: ArenaService,
   ) {}
 
   afterInit(server: Namespace): void {
@@ -194,6 +197,25 @@ export class TrucoGateway
     );
   }
 
+  /** Host only: the bet of the next match. The host must be able to cover it. */
+  @SubscribeMessage(TrucoClientEvents.SET_STAKE)
+  onSetStake(
+    @ConnectedSocket() socket: TrucoSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      setStakeSchema,
+      body,
+      async (user, { stake }) => {
+        await this.arena.assertStake('TRUCO', stake, [user.id]);
+        this.tables.setStake(user.id, stake);
+        return null;
+      },
+    );
+  }
+
   @SubscribeMessage(TrucoClientEvents.JOIN)
   onJoin(@ConnectedSocket() socket: TrucoSocket, @MessageBody() body: unknown) {
     return this.handle(
@@ -202,7 +224,11 @@ export class TrucoGateway
       trucoJoinSchema,
       body,
       async (_, { code }): Promise<TrucoSnapshot> => {
-        const snapshot = this.tables.join(code, this.player(socket), socket.id);
+        const player = this.player(socket);
+        const stake = this.tables.stakeToJoin(code, player.userId);
+        if (stake !== null)
+          await this.arena.assertStake('TRUCO', stake, [player.userId]);
+        const snapshot = this.tables.join(code, player, socket.id);
         await socket.join(roomChannel(code));
         return snapshot;
       },
@@ -266,14 +292,22 @@ export class TrucoGateway
     @ConnectedSocket() socket: TrucoSocket,
     @MessageBody() body: unknown,
   ) {
-    return this.handle(socket, 'default', trucoEmptySchema, body, (user) => {
-      this.tables.start(user.id);
-      this.logger.log({
-        event: 'truco_match_started',
-        roomCode: this.tables.roomOf(user.id),
-      });
-      return Promise.resolve(null);
-    });
+    return this.handle(
+      socket,
+      'default',
+      trucoEmptySchema,
+      body,
+      async (user) => {
+        const check = this.tables.stakeCheck(user.id);
+        await this.arena.assertStake('TRUCO', check.stake, check.userIds);
+        this.tables.start(user.id);
+        this.logger.log({
+          event: 'truco_match_started',
+          roomCode: this.tables.roomOf(user.id),
+        });
+        return null;
+      },
+    );
   }
 
   @SubscribeMessage(TrucoClientEvents.REMATCH)

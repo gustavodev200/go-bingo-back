@@ -73,6 +73,8 @@ export const profileSchema = z.object({
   character: characterSchema.nullish(),
   points: z.number().int(),
   coins: z.number().int().min(0),
+  /** Moeda premium (ver contracts/diamonds). Opcional: front novo contra API anterior. */
+  diamonds: z.number().int().min(0).default(0),
 });
 export type Profile = z.infer<typeof profileSchema>;
 

@@ -4,6 +4,7 @@ import {
   pairFactor,
   planSettlement,
   potShares,
+  rakeOf,
   splitPot,
   type Entrant,
 } from './settlement';
@@ -255,5 +256,44 @@ describe('planSettlement streaks and bonuses', () => {
         entrants: [e('a'), e('b', { placement: 2 })],
       }).entries[0].bonuses.find((b) => b.code === 'WIN')!.amount;
     expect(win(0.5)).toBe(win() / 2);
+  });
+});
+
+describe('table stakes', () => {
+  it('uses the table stake as entry and as the abandon fine', () => {
+    const plan = planSettlement({
+      game: 'UNO',
+      durationMs: LONG,
+      stake: 150,
+      entrants: [e('a'), e('b', { placement: 2, abandoned: true })],
+    });
+    expect(plan.entries.map((x) => x.stake)).toEqual([150, 150]);
+    expect(plan.entries[1].penalty).toBe(150);
+  });
+
+  it('defaults to the game minimum', () => {
+    const plan = planSettlement({
+      game: 'UNO',
+      durationMs: LONG,
+      entrants: [e('a'), e('b', { placement: 2 })],
+    });
+    expect(plan.entries[0].stake).toBe(ARENA_RULES.UNO.ante);
+  });
+
+  it('bonuses and points do not grow with the stake (ranking measures skill)', () => {
+    const at = (stake?: number) =>
+      planSettlement({
+        game: 'UNO',
+        durationMs: LONG,
+        stake,
+        entrants: [e('a'), e('b', { placement: 2 })],
+      }).entries[0];
+    expect(at(750).bonuses).toEqual(at().bonuses);
+    expect(at(750).pointsDelta).toBe(at().pointsDelta);
+  });
+
+  it('rakeOf rounds down and is zero without a rate', () => {
+    expect(rakeOf(399, 0.05)).toBe(19);
+    expect(rakeOf(400, 0)).toBe(0);
   });
 });

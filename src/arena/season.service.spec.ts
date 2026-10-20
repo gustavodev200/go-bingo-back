@@ -12,6 +12,7 @@ function makePrisma() {
     seasonPayout: { create: jest.fn() },
     profile: { update: jest.fn() },
     coinTransaction: { create: jest.fn() },
+    diamondTransaction: { create: jest.fn() },
   };
   return {
     ...models,
@@ -23,7 +24,7 @@ function makePrisma() {
 describe('SeasonService.pay', () => {
   const start = weekStart(new Date('2026-10-12T12:00:00Z'));
 
-  it('pays the top of the board, one prize per rank, crediting the wallet', async () => {
+  it('pays the top of the board, one prize per rank, crediting coins and diamonds', async () => {
     const prisma = makePrisma();
     prisma.$queryRaw.mockResolvedValue([
       { id: A, points: 90 },
@@ -39,6 +40,7 @@ describe('SeasonService.pay', () => {
         rank: 1,
         userId: A,
         coins: 1000,
+        diamonds: 30,
         points: 90,
       },
     });
@@ -56,6 +58,13 @@ describe('SeasonService.pay', () => {
         reason: 'SEASON',
         gameId: undefined,
       },
+    });
+    expect(prisma.diamondTransaction.create).toHaveBeenCalledWith({
+      data: { userId: A, amount: 30, reason: 'SEASON' },
+    });
+    expect(prisma.profile.update).toHaveBeenCalledWith({
+      where: { id: B },
+      data: { diamonds: { increment: 20 } },
     });
   });
 

@@ -228,3 +228,58 @@ export const latestResultQuerySchema = z.object({
   /** ISO: só resultados criados depois disto (a tela espera o da partida que acabou de terminar). */
   since: z.iso.datetime().optional(),
 });
+
+/**
+ * Mesas com aposta: o anfitrião escolhe quanto vale a mesa (múltiplo da entrada mínima do jogo).
+ * O mínimo de cada jogo é `ARENA_RULES[game].ante`. Mesas altas pedem liga (anti-conta-nova) e
+ * pagam uma taxa da casa sobre o pote, que tira moedas de circulação. Bônus da casa e pontos
+ * não mudam com a aposta: o ranking continua medindo habilidade, não saldo.
+ */
+export const STAKE_LEVELS = [
+  { id: 'AMISTOSA', label: 'Amistosa', multiplier: 1, minTier: 0, rake: 0 },
+  { id: 'VALENDO', label: 'Valendo', multiplier: 2, minTier: 0, rake: 0 },
+  { id: 'ALTA', label: 'Alta', multiplier: 5, minTier: 1, rake: 0.05 },
+  {
+    id: 'HIGH_ROLLER',
+    label: 'High Roller',
+    multiplier: 10,
+    minTier: 2,
+    rake: 0.05,
+  },
+  { id: 'VIP', label: 'VIP', multiplier: 25, minTier: 3, rake: 0.05 },
+] as const;
+export type StakeLevelId = (typeof STAKE_LEVELS)[number]['id'];
+
+export interface StakeOption {
+  id: StakeLevelId;
+  label: string;
+  multiplier: number;
+  /** Índice em TIERS exigido para sentar (0 = qualquer um, inclusive convidado). */
+  minTier: number;
+  /** Parte do pote que fica com a casa. */
+  rake: number;
+  stake: number;
+}
+
+/** Valores de aposta disponíveis num jogo, do mínimo ao maior. */
+export function stakeOptions(game: ArenaGame): StakeOption[] {
+  const ante = ARENA_RULES[game].ante;
+  return STAKE_LEVELS.map((l) => ({ ...l, stake: ante * l.multiplier }));
+}
+
+/** O nível de uma aposta; undefined = valor que o jogo não oferece. */
+export function stakeLevel(
+  game: ArenaGame,
+  stake: number,
+): StakeOption | undefined {
+  return stakeOptions(game).find((o) => o.stake === stake);
+}
+
+export function minStake(game: ArenaGame): number {
+  return ARENA_RULES[game].ante;
+}
+
+/** Payload de `<jogo>:set_stake` (só o anfitrião, no lobby). */
+export const setStakeSchema = z.object({
+  stake: z.number().int().positive(),
+});

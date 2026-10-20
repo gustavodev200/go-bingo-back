@@ -157,6 +157,7 @@ export class ProfilesService {
       character: characterSchema.safeParse(row.character).data ?? null,
       points: row.points,
       coins: row.coins,
+      diamonds: row.diamonds,
     };
   }
 }

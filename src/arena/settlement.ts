@@ -46,6 +46,8 @@ export interface SettlementInput {
   durationMs: number;
   /** Multiplicador do bônus de vitória (ex.: bingo em quina vale metade). */
   bonusScale?: number;
+  /** Aposta da mesa (entrada de cada um e valor da multa de abandono); ausente = mínimo do jogo. */
+  stake?: number;
   /** Confrontos recentes entre dois jogadores (0..). Decide o retorno decrescente. */
   pairMatches?: (a: string, b: string) => number;
 }
@@ -128,6 +130,11 @@ export function splitPot(pot: number, shares: readonly number[]): number[] {
     parts[shares.indexOf(Math.max(...shares))] += left;
   }
   return parts;
+}
+
+/** Taxa da casa sobre o pote das mesas altas (arredonda para baixo: nunca cobra a mais). */
+export function rakeOf(pot: number, rate: number): number {
+  return rate > 0 ? Math.floor(pot * rate) : 0;
 }
 
 interface Resolved extends Entrant {
@@ -226,6 +233,7 @@ function bonusesFor(
 export function planSettlement(input: SettlementInput): SettlementPlan {
   const rules = ARENA_RULES[input.game];
   const bonusScale = input.bonusScale ?? 1;
+  const stake = input.stake ?? rules.ante;
   const pair = input.pairMatches ?? (() => 0);
 
   // Quem abandona fica atrás de todo mundo, mesmo que estivesse na frente.
@@ -264,8 +272,8 @@ export function planSettlement(input: SettlementInput): SettlementPlan {
       abandoned: me.abandoned,
       rated: rating.rated,
       pointsDelta,
-      stake: rules.ante,
-      penalty: me.abandoned ? rules.ante * ABANDON_PENALTY_MULTIPLIER : 0,
+      stake,
+      penalty: me.abandoned ? stake * ABANDON_PENALTY_MULTIPLIER : 0,
       potShare: shares[idx],
       bonuses,
       streakAfter,

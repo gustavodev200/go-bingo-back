@@ -235,6 +235,82 @@ describe('ArenaService.settle', () => {
   });
 });
 
+describe('ArenaService.settle with a table stake', () => {
+  it('charges the table stake and keeps the house rake on high tables', async () => {
+    const prisma = makePrisma();
+    prisma.profile.findMany.mockResolvedValue([profile(A), profile(B)]);
+    wire(prisma, [200, 200]); // TRUCO 5x = mesa Alta (5% de taxa)
+    const service = new ArenaService(prisma as unknown as PrismaService);
+
+    const results = await service.settle({ ...input, stake: 200 });
+
+    expect(prisma.$queryRaw.mock.calls[0]).toContain(200);
+    expect(results!.get(A)).toMatchObject({ staked: 200, prize: 380 });
+    expect(results!.get(B)).toMatchObject({ staked: 200, prize: 0 });
+  });
+
+  it('low tables have no rake: the whole pot goes to the winner', async () => {
+    const prisma = makePrisma();
+    prisma.profile.findMany.mockResolvedValue([profile(A), profile(B)]);
+    wire(prisma, [80, 80]); // TRUCO 2x = Valendo
+    const service = new ArenaService(prisma as unknown as PrismaService);
+
+    const results = await service.settle({ ...input, stake: 80 });
+
+    expect(results!.get(A)).toMatchObject({ staked: 80, prize: 160 });
+  });
+});
+
+describe('ArenaService.assertStake', () => {
+  function withProfiles(rows: Array<Record<string, unknown>>) {
+    const prisma = makePrisma();
+    prisma.profile.findMany.mockResolvedValue(rows);
+    return new ArenaService(prisma as unknown as PrismaService);
+  }
+
+  it('accepts players who can cover the stake', async () => {
+    const service = withProfiles([
+      { id: A, nickname: 'Ana', coins: 100, points: 0 },
+    ]);
+    await expect(service.assertStake('UNO', 60, [A])).resolves.toBeUndefined();
+  });
+
+  it('refuses a value the game does not offer', async () => {
+    const service = withProfiles([]);
+    await expect(service.assertStake('UNO', 31, [A])).rejects.toMatchObject({
+      code: 'INVALID_PAYLOAD',
+    });
+  });
+
+  it('names who is short of coins when the host starts the match', async () => {
+    const service = withProfiles([
+      { id: A, nickname: 'Ana', coins: 500, points: 0 },
+      { id: B, nickname: 'Bia', coins: 10, points: 0 },
+    ]);
+    await expect(service.assertStake('UNO', 60, [A, B])).rejects.toMatchObject({
+      code: 'INSUFFICIENT_COINS',
+      message: expect.stringContaining('Bia') as unknown,
+    });
+  });
+
+  it('high tables need a league (new accounts cannot sit there)', async () => {
+    const service = withProfiles([
+      { id: A, nickname: 'Ana', coins: 5000, points: 0 },
+    ]);
+    await expect(service.assertStake('UNO', 300, [A])).rejects.toMatchObject({
+      code: 'STAKE_LOCKED',
+      message: 'Você precisa da liga Ouro para a mesa High Roller',
+    });
+  });
+
+  it('nobody to check (alone against the CPU) passes', async () => {
+    const service = withProfiles([]);
+    await expect(
+      service.assertStake('BOMBER', 30, []),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe('ArenaService.settleSafe', () => {
   it('never throws: a database failure is logged and swallowed', async () => {
     const logged = jest

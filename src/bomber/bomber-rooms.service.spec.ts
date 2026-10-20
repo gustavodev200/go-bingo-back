@@ -151,6 +151,18 @@ describe('BomberRoomsService', () => {
     expect(service.roomOf('a')).toBe(snap.state.code);
   });
 
+  it('the stake is bet only by humans; alone against the CPU nothing is checked', () => {
+    const code = roomWith(1, false);
+    service.addBot('a');
+    expect(service.stakeCheck('a')).toEqual({ stake: 30, userIds: [] });
+    service.join(code, player('b'), 's-b');
+    service.setReady('a', true);
+    service.setStake('a', 60);
+    expect(state().stake).toBe(60);
+    expect(state().seats[0]?.ready).toBe(false);
+    expect(service.stakeCheck('a')).toEqual({ stake: 60, userIds: ['a', 'b'] });
+  });
+
   it('private rooms stay out of the list; the host can switch', () => {
     const code = service.create(player('a'), 's1', false).state.code;
     expect(publisher.publicList()).toEqual([]);

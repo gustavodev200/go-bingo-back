@@ -1,4 +1,4 @@
-import type { CoinReason } from '../contracts';
+import type { CoinReason, DiamondReason } from '../contracts';
 import { DomainError } from '../core/domain-error';
 import type { Prisma } from '../generated/prisma/client';
 
@@ -75,6 +75,20 @@ export async function chargeUpTo(
   if (data.length > 0) await tx.coinTransaction.createMany({ data });
   for (const r of rows) taken.set(r.id, Math.max(r.charged, 0));
   return taken;
+}
+
+/** Credita diamantes com a linha de extrato (dentro da transação de quem chama). */
+export async function creditDiamonds(
+  tx: Tx,
+  userId: string,
+  amount: number,
+  reason: DiamondReason,
+): Promise<void> {
+  await tx.profile.update({
+    where: { id: userId },
+    data: { diamonds: { increment: amount } },
+  });
+  await tx.diamondTransaction.create({ data: { userId, amount, reason } });
 }
 
 /** Dia corrente no fuso do Brasil, como DATE (meia-noite UTC) — chave do bônus diário. */

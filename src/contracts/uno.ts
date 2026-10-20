@@ -143,6 +143,8 @@ export interface UnoRoomState {
   version: number;
   hostId: string;
   isPublic: boolean;
+  /** Aposta de cada jogador nesta mesa (Arena). */
+  stake: number;
   rules: UnoRules;
   phase: UnoRoomPhase;
   lobbyStatus: UnoLobbyStatus | null;
@@ -172,6 +174,7 @@ export interface UnoPublicRoom {
   code: string;
   hostNickname: string;
   hostCharacter: string | null;
+  stake: number;
   players: number;
   rules: UnoRules;
 }
@@ -205,6 +208,8 @@ export const UnoClientEvents = {
   WATCH_ROOMS: 'uno:watch_rooms',
   UNWATCH_ROOMS: 'uno:unwatch_rooms',
   SET_VISIBILITY: 'uno:set_visibility',
+  /** Host only, lobby only: how much each player bets. */
+  SET_STAKE: 'uno:set_stake',
   SET_RULES: 'uno:set_rules',
   JOIN: 'uno:join',
   SYNC: 'uno:sync',
@@ -350,6 +355,7 @@ export interface UnoClientAckData {
   'uno:watch_rooms': UnoPublicRoom[];
   'uno:unwatch_rooms': null;
   'uno:set_visibility': null;
+  'uno:set_stake': null;
   'uno:set_rules': null;
   'uno:join': UnoSnapshot;
   'uno:sync': UnoSnapshot;

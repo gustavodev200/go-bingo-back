@@ -52,7 +52,10 @@ describe('DominoGateway (Socket.IO integration)', () => {
         DominoRoomsService,
         {
           provide: ArenaService,
-          useValue: { settleSafe: jest.fn().mockResolvedValue(null) },
+          useValue: {
+            settleSafe: jest.fn().mockResolvedValue(null),
+            assertStake: jest.fn().mockResolvedValue(undefined),
+          },
         },
         SocketDominoPublisher,
         { provide: DOMINO_PUBLISHER, useExisting: SocketDominoPublisher },

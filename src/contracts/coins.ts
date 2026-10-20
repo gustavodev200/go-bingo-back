@@ -31,5 +31,7 @@ export const COIN_REASONS = [
   'TIER',
   /** Prêmio do ranking semanal. */
   'SEASON',
+  /** Diamantes trocados por moedas. */
+  'EXCHANGE',
 ] as const;
 export type CoinReason = (typeof COIN_REASONS)[number];

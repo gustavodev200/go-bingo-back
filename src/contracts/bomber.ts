@@ -330,6 +330,8 @@ export interface BomberRoomState {
   version: number;
   hostId: string;
   isPublic: boolean;
+  /** Aposta de cada jogador nesta mesa (Arena). */
+  stake: number;
   rules: BomberRules;
   phase: BomberRoomPhase;
   lobbyStatus: BomberLobbyStatus | null;
@@ -350,6 +352,7 @@ export interface BomberPublicRoom {
   code: string;
   hostNickname: string;
   hostCharacter: string | null;
+  stake: number;
   players: number;
   rules: BomberRules;
 }
@@ -436,6 +439,8 @@ export const BomberClientEvents = {
   WATCH_ROOMS: 'bomber:watch_rooms',
   UNWATCH_ROOMS: 'bomber:unwatch_rooms',
   SET_VISIBILITY: 'bomber:set_visibility',
+  /** Host only, lobby only: how much each player bets. */
+  SET_STAKE: 'bomber:set_stake',
   SET_RULES: 'bomber:set_rules',
   JOIN: 'bomber:join',
   SYNC: 'bomber:sync',
@@ -537,6 +542,7 @@ export interface BomberClientAckData {
   'bomber:watch_rooms': BomberPublicRoom[];
   'bomber:unwatch_rooms': null;
   'bomber:set_visibility': null;
+  'bomber:set_stake': null;
   'bomber:set_rules': null;
   'bomber:join': BomberSnapshot;
   'bomber:sync': BomberSnapshot;

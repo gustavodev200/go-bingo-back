@@ -38,6 +38,14 @@ enum CoinReason {
   PENALTY
   TIER
   SEASON
+  EXCHANGE
+}
+
+enum DiamondReason {
+  DAILY
+  STREAK
+  EXCHANGE
+  SEASON
 }
 
 enum ArenaGame {
@@ -53,31 +61,38 @@ enum ArenaGame {
 /// RLS ligada por migration (enable_rls); novas tabelas precisam do mesmo ALTER na migration que as cria.
 /// id = auth.users.id do Supabase (sem FK: schemas diferentes).
 model Profile {
-  id               String            @id @db.Uuid
-  nickname         String?           @db.VarChar(16)
+  id                  String               @id @db.Uuid
+  nickname            String?              @db.VarChar(16)
   /// Personagem escolhido no seletor (CHARACTER_IDS); null = boneco derivado do id.
-  character        String?           @db.VarChar(8)
-  isGuest          Boolean           @default(true)
-  points           Int               @default(0)
-  gamesPlayed      Int               @default(0)
+  character           String?              @db.VarChar(8)
+  isGuest             Boolean              @default(true)
+  points              Int                  @default(0)
+  gamesPlayed         Int                  @default(0)
   /// Moedas do jogo; nunca negativo (CHECK na migration).
-  coins            Int               @default(0)
+  coins               Int                  @default(0)
   /// Dia (America/Sao_Paulo) do último bônus diário.
-  lastDailyBonusOn DateTime?         @db.Date
+  lastDailyBonusOn    DateTime?            @db.Date
   /// Dia (America/Sao_Paulo) da última "primeira vitória do dia".
-  lastWinBonusOn   DateTime?         @db.Date
+  lastWinBonusOn      DateTime?            @db.Date
   /// > 0 vitórias seguidas, < 0 derrotas seguidas (Arena, todos os jogos).
-  streak           Int               @default(0)
-  bestStreak       Int               @default(0)
+  streak              Int                  @default(0)
+  bestStreak          Int                  @default(0)
   /// Partidas que entraram no rating (calibração do fator K).
-  ratedMatches     Int               @default(0)
+  ratedMatches        Int                  @default(0)
   /// Maior liga já alcançada (índice em TIERS); o bônus de subida é pago uma vez por liga.
-  bestTier         Int               @default(0)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  memberships      RoomMember[]
-  coinTransactions CoinTransaction[]
-  matchResults     MatchResult[]
+  bestTier            Int                  @default(0)
+  /// Moeda premium; nunca negativo (CHECK na migration).
+  diamonds            Int                  @default(0)
+  /// Dias seguidos de resgate de diamantes no ciclo atual (1..7).
+  diamondStreak       Int                  @default(0)
+  /// Dia (America/Sao_Paulo) do último resgate de diamantes.
+  lastDiamondOn       DateTime?            @db.Date
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  memberships         RoomMember[]
+  coinTransactions    CoinTransaction[]
+  matchResults        MatchResult[]
+  diamondTransactions DiamondTransaction[]
 
   @@index([points(sort: Desc)])
 }
@@ -92,6 +107,8 @@ model Room {
   status         RoomStatus   @default(WAITING)
   drawIntervalMs Int          @default(8000)
   winPattern     WinPattern   @default(FULL_CARD)
+  /// Aposta de cada jogador (Arena: múltiplo da entrada mínima do bingo).
+  stake          Int          @default(20)
   createdAt      DateTime     @default(now())
   members        RoomMember[]
   games          Game[]
@@ -169,27 +186,39 @@ model CoinTransaction {
   @@index([userId, createdAt])
 }
 
+/// Extrato de diamantes (resgate diário, sequência, troca, ranking semanal).
+model DiamondTransaction {
+  id        String        @id @default(uuid()) @db.Uuid
+  userId    String        @db.Uuid
+  amount    Int
+  reason    DiamondReason
+  createdAt DateTime      @default(now())
+  profile   Profile       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
 /// Resultado de um jogador numa disputa (todos os jogos). (matchId, userId) único = liquidar duas vezes não paga duas vezes.
 model MatchResult {
-  id           String    @id @default(uuid()) @db.Uuid
-  matchId      String    @db.Uuid
-  userId       String    @db.Uuid
-  game         ArenaGame
-  placement    Int
-  players      Int
-  won          Boolean
-  abandoned    Boolean   @default(false)
-  rated        Boolean   @default(false)
-  pointsDelta  Int       @default(0)
-  coinsDelta   Int       @default(0)
-  staked       Int       @default(0)
-  prize        Int       @default(0)
-  bonuses      Json      @default("[]")
-  streak       Int       @default(0)
-  pointsAfter  Int       @default(0)
-  tierUp       Json?
-  createdAt    DateTime  @default(now())
-  profile      Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String    @id @default(uuid()) @db.Uuid
+  matchId     String    @db.Uuid
+  userId      String    @db.Uuid
+  game        ArenaGame
+  placement   Int
+  players     Int
+  won         Boolean
+  abandoned   Boolean   @default(false)
+  rated       Boolean   @default(false)
+  pointsDelta Int       @default(0)
+  coinsDelta  Int       @default(0)
+  staked      Int       @default(0)
+  prize       Int       @default(0)
+  bonuses     Json      @default("[]")
+  streak      Int       @default(0)
+  pointsAfter Int       @default(0)
+  tierUp      Json?
+  createdAt   DateTime  @default(now())
+  profile     Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([matchId, userId])
   @@index([userId, createdAt])
@@ -203,6 +232,7 @@ model SeasonPayout {
   rank      Int
   userId    String   @db.Uuid
   coins     Int
+  diamonds  Int      @default(0)
   points    Int
   createdAt DateTime @default(now())
 

@@ -27,10 +27,12 @@ import {
   infVisibilitySchema,
   roomChannel,
   userChannel,
+  setStakeSchema,
   type Ack,
   type InfSnapshot,
 } from '../contracts';
 import { JwtVerifier, type AuthUser } from '../core/auth/jwt-verifier';
+import { ArenaService } from '../arena/arena.service';
 import { DomainError } from '../core/domain-error';
 import { RateLimiter } from '../game/rate-limiter';
 import { ProfilesService } from '../profiles/profiles.service';
@@ -74,6 +76,7 @@ export class InfGateway
     private readonly profiles: ProfilesService,
     private readonly rooms: InfRoomsService,
     private readonly publisher: SocketInfPublisher,
+    private readonly arena: ArenaService,
   ) {}
 
   afterInit(server: Namespace): void {
@@ -182,6 +185,24 @@ export class InfGateway
     );
   }
 
+  /** Host only: the bet of the next match. The host must be able to cover it. */
+  @SubscribeMessage(InfClientEvents.SET_STAKE)
+  onSetStake(
+    @ConnectedSocket() socket: InfSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      setStakeSchema,
+      body,
+      async (user, { stake }) => {
+        await this.arena.assertStake('INFILTRADO', stake, [user.id]);
+        return this.run(() => this.rooms.setStake(user.id, stake));
+      },
+    );
+  }
+
   @SubscribeMessage(InfClientEvents.JOIN)
   onJoin(@ConnectedSocket() socket: InfSocket, @MessageBody() body: unknown) {
     return this.handle(
@@ -190,7 +211,11 @@ export class InfGateway
       infJoinSchema,
       body,
       async (_, { code }): Promise<InfSnapshot> => {
-        const snapshot = this.rooms.join(code, this.player(socket), socket.id);
+        const player = this.player(socket);
+        const stake = this.rooms.stakeToJoin(code, player.userId);
+        if (stake !== null)
+          await this.arena.assertStake('INFILTRADO', stake, [player.userId]);
+        const snapshot = this.rooms.join(code, player, socket.id);
         await socket.join(roomChannel(code));
         return snapshot;
       },
@@ -259,14 +284,22 @@ export class InfGateway
 
   @SubscribeMessage(InfClientEvents.START)
   onStart(@ConnectedSocket() socket: InfSocket, @MessageBody() body: unknown) {
-    return this.handle(socket, 'default', infEmptySchema, body, (user) =>
-      this.run(() => {
-        this.rooms.start(user.id);
-        this.logger.log({
-          event: 'infiltrado_match_started',
-          roomCode: this.rooms.roomOf(user.id),
+    return this.handle(
+      socket,
+      'default',
+      infEmptySchema,
+      body,
+      async (user) => {
+        const check = this.rooms.stakeCheck(user.id);
+        await this.arena.assertStake('INFILTRADO', check.stake, check.userIds);
+        return this.run(() => {
+          this.rooms.start(user.id);
+          this.logger.log({
+            event: 'infiltrado_match_started',
+            roomCode: this.rooms.roomOf(user.id),
+          });
         });
-      }),
+      },
     );
   }
 

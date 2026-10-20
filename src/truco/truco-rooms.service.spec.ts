@@ -566,6 +566,7 @@ describe('TrucoRoomsService — public tables', () => {
         hostCharacter: null,
         players: 2,
         mode: 'mineiro',
+        stake: 40,
       },
       {
         code: lone,
@@ -573,6 +574,7 @@ describe('TrucoRoomsService — public tables', () => {
         hostCharacter: null,
         players: 1,
         mode: 'mineiro',
+        stake: 40,
       },
     ]);
     expect(t.publisher.publicChanges).toBeGreaterThan(0);

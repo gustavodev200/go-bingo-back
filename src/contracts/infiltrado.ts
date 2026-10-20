@@ -450,6 +450,8 @@ export interface InfRoomState {
   version: number;
   hostId: string;
   isPublic: boolean;
+  /** Aposta de cada jogador nesta mesa (Arena). */
+  stake: number;
   rules: InfRules;
   phase: InfRoomPhase;
   lobbyStatus: InfLobbyStatus | null;
@@ -468,6 +470,7 @@ export interface InfPublicRoom {
   code: string;
   hostNickname: string;
   hostCharacter: string | null;
+  stake: number;
   players: number;
   rules: InfRules;
 }
@@ -585,6 +588,8 @@ export const InfClientEvents = {
   WATCH_ROOMS: 'inf:watch_rooms',
   UNWATCH_ROOMS: 'inf:unwatch_rooms',
   SET_VISIBILITY: 'inf:set_visibility',
+  /** Host only, lobby only: how much each player bets. */
+  SET_STAKE: 'inf:set_stake',
   SET_RULES: 'inf:set_rules',
   JOIN: 'inf:join',
   SYNC: 'inf:sync',
@@ -732,6 +737,7 @@ export interface InfClientAckData {
   'inf:watch_rooms': InfPublicRoom[];
   'inf:unwatch_rooms': null;
   'inf:set_visibility': null;
+  'inf:set_stake': null;
   'inf:set_rules': null;
   'inf:join': InfSnapshot;
   'inf:sync': InfSnapshot;

@@ -52,6 +52,7 @@ describe('RoomsService', () => {
     expect(prisma.room.create).toHaveBeenCalledWith({
       data: {
         ...input,
+        stake: 20,
         drawIntervalMs: DEFAULT_DRAW_INTERVAL_MS,
         code: result.code,
         hostId: 'host',

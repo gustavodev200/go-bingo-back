@@ -214,6 +214,7 @@ export class GamesService {
         game: 'BINGO',
         durationMs: Date.now() - game.startedAt.getTime(),
         bonusScale: room.winPattern === 'LINE' ? 0.5 : 1,
+        stake: room.stake,
         skipGamesPlayed: true,
         participants: [
           { userId: user.id, placement: 1 },

@@ -25,10 +25,12 @@ import {
   unoReadySchema,
   unoVisibilitySchema,
   userChannel,
+  setStakeSchema,
   type Ack,
   type UnoSnapshot,
 } from '../contracts';
 import { JwtVerifier, type AuthUser } from '../core/auth/jwt-verifier';
+import { ArenaService } from '../arena/arena.service';
 import { DomainError } from '../core/domain-error';
 import { RateLimiter } from '../game/rate-limiter';
 import { ProfilesService } from '../profiles/profiles.service';
@@ -73,6 +75,7 @@ export class UnoGateway
     private readonly profiles: ProfilesService,
     private readonly tables: UnoRoomsService,
     private readonly publisher: SocketUnoPublisher,
+    private readonly arena: ArenaService,
   ) {}
 
   afterInit(server: Namespace): void {
@@ -169,6 +172,25 @@ export class UnoGateway
     );
   }
 
+  /** Host only: the bet of the next match. The host must be able to cover it. */
+  @SubscribeMessage(UnoClientEvents.SET_STAKE)
+  onSetStake(
+    @ConnectedSocket() socket: UnoSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      setStakeSchema,
+      body,
+      async (user, { stake }) => {
+        await this.arena.assertStake('UNO', stake, [user.id]);
+        this.tables.setStake(user.id, stake);
+        return null;
+      },
+    );
+  }
+
   @SubscribeMessage(UnoClientEvents.JOIN)
   onJoin(@ConnectedSocket() socket: UnoSocket, @MessageBody() body: unknown) {
     return this.handle(
@@ -177,7 +199,11 @@ export class UnoGateway
       unoJoinSchema,
       body,
       async (_, { code }): Promise<UnoSnapshot> => {
-        const snapshot = this.tables.join(code, this.player(socket), socket.id);
+        const player = this.player(socket);
+        const stake = this.tables.stakeToJoin(code, player.userId);
+        if (stake !== null)
+          await this.arena.assertStake('UNO', stake, [player.userId]);
+        const snapshot = this.tables.join(code, player, socket.id);
         await socket.join(roomChannel(code));
         return snapshot;
       },
@@ -232,14 +258,22 @@ export class UnoGateway
 
   @SubscribeMessage(UnoClientEvents.START)
   onStart(@ConnectedSocket() socket: UnoSocket, @MessageBody() body: unknown) {
-    return this.handle(socket, 'default', unoEmptySchema, body, (user) => {
-      this.tables.start(user.id);
-      this.logger.log({
-        event: 'uno_match_started',
-        roomCode: this.tables.roomOf(user.id),
-      });
-      return Promise.resolve(null);
-    });
+    return this.handle(
+      socket,
+      'default',
+      unoEmptySchema,
+      body,
+      async (user) => {
+        const check = this.tables.stakeCheck(user.id);
+        await this.arena.assertStake('UNO', check.stake, check.userIds);
+        this.tables.start(user.id);
+        this.logger.log({
+          event: 'uno_match_started',
+          roomCode: this.tables.roomOf(user.id),
+        });
+        return null;
+      },
+    );
   }
 
   @SubscribeMessage(UnoClientEvents.REMATCH)
