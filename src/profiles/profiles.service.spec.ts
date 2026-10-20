@@ -307,6 +307,7 @@ describe('ProfilesService.stats', () => {
         { game: 'INFILTRADO', played: 0, wins: 0 },
         { game: 'DAMAS', played: 0, wins: 0 },
         { game: 'BLACKJACK', played: 0, wins: 0 },
+        { game: 'TACADA', played: 0, wins: 0 },
       ],
       coinHistory: [
         { id: 't2', amount: -5, reason: 'CARD', createdAt: at.toISOString() },

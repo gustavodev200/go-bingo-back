@@ -8,6 +8,8 @@ import { BjRoomsService } from '../blackjack/blackjack-rooms.service';
 import { BjModule } from '../blackjack/blackjack.module';
 import { DamasRoomsService } from '../damas/damas-rooms.service';
 import { DamasModule } from '../damas/damas.module';
+import { TacadaRoomsService } from '../tacada/tacada-rooms.service';
+import { TacadaModule } from '../tacada/tacada.module';
 import { DominoRoomsService } from '../domino/domino-rooms.service';
 import { DominoModule } from '../domino/domino.module';
 import { GameModule } from '../game/game.module';
@@ -36,6 +38,7 @@ import {
     UnoModule,
     DominoModule,
     DamasModule,
+    TacadaModule,
     BjModule,
     InfiltradoModule,
   ],
@@ -57,6 +60,7 @@ import {
         UnoRoomsService,
         DominoRoomsService,
         DamasRoomsService,
+        TacadaRoomsService,
         BjRoomsService,
         InfRoomsService,
       ],
@@ -66,6 +70,7 @@ import {
         uno: UnoRoomsService,
         domino: DominoRoomsService,
         damas: DamasRoomsService,
+        tacada: TacadaRoomsService,
         blackjack: BjRoomsService,
         inf: InfRoomsService,
       ): VoiceMembership => ({
@@ -80,6 +85,8 @@ import {
             return Promise.resolve(domino.roomOf(userId) === code);
           if (game === 'damas')
             return Promise.resolve(damas.roomOf(userId) === code);
+          if (game === 'tacada')
+            return Promise.resolve(tacada.roomOf(userId) === code);
           if (game === 'blackjack')
             return Promise.resolve(blackjack.roomOf(userId) === code);
           return bingo.isMember(code, userId);
