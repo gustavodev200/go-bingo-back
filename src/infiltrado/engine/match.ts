@@ -85,6 +85,17 @@ interface Meeting {
   votes: Map<number, number>;
 }
 
+type SharedFrame = Pick<
+  InfFrame,
+  | 'phase'
+  | 'phaseLeft'
+  | 'taskBar'
+  | 'sabotage'
+  | 'buttonCd'
+  | 'meeting'
+  | 'eject'
+> & { impostors: number[] };
+
 export interface MatchResult {
   winner: InfTeam;
   reason: InfWinReason;
@@ -236,6 +247,7 @@ export class InfMatch {
 
   act(seat: number, a: InfAct): void {
     const p = this.require(seat);
+    this.shared = null;
     switch (a.t) {
       case 'task_open':
         return this.taskOpen(p, a.station);
@@ -784,6 +796,59 @@ export class InfMatch {
   // Frames
   // -------------------------------------------------------------------------
 
+  private shared: (SharedFrame & { at: number; phase: InfPhase }) | null = null;
+
+  /**
+   * The part of the frame that is the same for every viewer, built once per
+   * tick (a full room asks for 15 frames per tick).
+   */
+  private sharedFrame(): SharedFrame {
+    const cached = this.shared;
+    if (cached && cached.at === this.t && cached.phase === this.phase)
+      return cached;
+    const { done, total } = this.taskProgress();
+    const m = this.meeting;
+    const next = {
+      at: this.t,
+      phase: this.phase,
+      phaseLeft: round1(Math.max(0, this.phaseLeft)),
+      impostors: this.impostorSeats(),
+      taskBar: total > 0 ? round2(done / total) : 0,
+      sabotage: this.sabotage
+        ? {
+            kind: this.sabotage.kind,
+            left:
+              this.sabotage.left === null ? null : round1(this.sabotage.left),
+            fixed: [...this.sabotage.fixed],
+          }
+        : null,
+      buttonCd: round1(this.buttonCd),
+      meeting: m
+        ? {
+            caller: m.caller,
+            body: m.body,
+            stage: m.stage,
+            left: round1(Math.max(0, m.left)),
+            voters: [...m.voters],
+            voted: [...m.votes.keys()],
+            votes:
+              m.stage === 'result'
+                ? ([...m.votes.entries()] as [number, number][])
+                : null,
+          }
+        : null,
+      eject: this.eject ? { ...this.eject } : null,
+    };
+    this.shared = next;
+    return next;
+  }
+
+  /** Drops events nobody will read (disconnected players). */
+  discardEvents(seat: number): void {
+    const p = this.players.get(seat);
+    if (p) p.events = [];
+  }
+
   /** What `seat` sees this tick. Drains that player's events. */
   frameFor(seat: number): InfFrame {
     const me = this.players.get(seat)!;
@@ -813,22 +878,19 @@ export class InfMatch {
         if (this.sees(me, b.x, b.y))
           bodies.push([b.seat, round2(b.x), round2(b.y)]);
     }
-    const { done, total } = this.taskProgress();
-    const m = this.meeting;
+    const sh = this.sharedFrame();
     const events = me.events;
     me.events = [];
     return {
-      phase: this.phase,
-      phaseLeft: round1(Math.max(0, this.phaseLeft)),
+      phase: sh.phase,
+      phaseLeft: sh.phaseLeft,
       me: {
         x: round2(me.x),
         y: round2(me.y),
         alive: me.alive,
         role: me.role,
         mates:
-          me.role === 'impostor'
-            ? this.impostorSeats().filter((s) => s !== seat)
-            : [],
+          me.role === 'impostor' ? sh.impostors.filter((s) => s !== seat) : [],
         lastSeq: me.lastSeq,
         killCd: round1(me.killCd),
         sabotageCd: me.role === 'impostor' ? round1(this.sabotageCd) : 0,
@@ -839,28 +901,11 @@ export class InfMatch {
       },
       players,
       bodies,
-      taskBar: total > 0 ? round2(done / total) : 0,
-      sabotage: this.sabotage
-        ? {
-            kind: this.sabotage.kind,
-            left:
-              this.sabotage.left === null ? null : round1(this.sabotage.left),
-            fixed: [...this.sabotage.fixed],
-          }
-        : null,
-      buttonCd: round1(this.buttonCd),
-      meeting: m
-        ? {
-            caller: m.caller,
-            body: m.body,
-            stage: m.stage,
-            left: round1(Math.max(0, m.left)),
-            voters: [...m.voters],
-            voted: [...m.votes.keys()],
-            votes: m.stage === 'result' ? [...m.votes.entries()] : null,
-          }
-        : null,
-      eject: this.eject ? { ...this.eject } : null,
+      taskBar: sh.taskBar,
+      sabotage: sh.sabotage,
+      buttonCd: sh.buttonCd,
+      meeting: sh.meeting,
+      eject: sh.eject,
       events,
     };
   }

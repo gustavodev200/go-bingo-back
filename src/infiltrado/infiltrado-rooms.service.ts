@@ -475,8 +475,9 @@ export class InfRoomsService implements OnModuleDestroy {
     if (!match) return;
     room.seats.forEach((s, seat) => {
       if (!s || s.bot) return;
-      const frame = match.frameFor(seat);
-      if (s.sockets.size > 0) this.publisher.frame(s.userId, frame);
+      // Nobody to send it to: just drop the events instead of building a frame.
+      if (s.sockets.size === 0) return match.discardEvents(seat);
+      this.publisher.frame(s.userId, match.frameFor(seat));
     });
   }
 
