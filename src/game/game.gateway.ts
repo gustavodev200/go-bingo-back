@@ -17,6 +17,7 @@ import {
   joinRoomPayloadSchema,
   kickPayloadSchema,
   markPayloadSchema,
+  setCpusPayloadSchema,
   PUBLIC_ROOMS_CHANNEL,
   roomChannel,
   ServerEvents,
@@ -289,6 +290,25 @@ export class GameGateway
       body,
       async (user) => {
         await this.runner.start(this.requireRoom(socket), user.id);
+        return null;
+      },
+    );
+  }
+
+  @SubscribeMessage(ClientEvents.ROOM_SET_CPUS)
+  onSetCpus(
+    @ConnectedSocket() socket: GameSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      setCpusPayloadSchema,
+      body,
+      async (user, { count }) => {
+        const code = this.requireRoom(socket);
+        await this.games.setCpus(code, user.id, count);
+        await this.runner.broadcastSnapshots(code);
         return null;
       },
     );

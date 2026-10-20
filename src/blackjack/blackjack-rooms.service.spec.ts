@@ -405,3 +405,53 @@ describe('BjRoomsService', () => {
     expect(t.timer.pending).toEqual([]);
   });
 });
+
+describe('BjRoomsService — CPU', () => {
+  const THINK = 1_100;
+
+  it('CPUs bet and play on their own; the tournament is settled as a CPU match', () => {
+    const t = setup();
+    t.service.create(ana, 's0');
+    t.service.addBot(ana.userId);
+    t.service.addBot(ana.userId);
+    expect(t.state().seats[1]).toMatchObject({ bot: true, ready: true });
+    expect(t.service.stakeCheck(ana.userId).userIds).toEqual([]);
+    t.service.setReady(ana.userId, true);
+    t.service.start(ana.userId);
+
+    // The CPUs bet by themselves; only Ana is missing.
+    t.timer.fire(THINK);
+    const players = t.state().game!.players;
+    expect(players[1]!.bet).not.toBeNull();
+    expect(players[2]!.bet).not.toBeNull();
+    expect(players[0]!.bet).toBeNull();
+
+    for (let i = 0; i < 2000 && t.state().phase === 'PLAYING'; i++) {
+      if (t.timer.scheduled(THINK) > 0) t.timer.fire(THINK);
+      else {
+        const next = t.timer.pending.find((p) => p.ms !== GRACE);
+        if (!next) break;
+        t.timer.fire(next.ms);
+      }
+    }
+    expect(t.state().phase).toBe('FINISHED');
+    expect(t.arena.settleSafe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        game: 'BLACKJACK',
+        cpuPlayers: 2,
+        participants: [expect.objectContaining({ userId: ana.userId })],
+      }),
+    );
+  });
+
+  it('closes the table when the last human leaves', () => {
+    const t = setup();
+    t.service.create(ana, 's0');
+    t.service.addBot(ana.userId);
+    t.service.removeBot(ana.userId, 1);
+    t.service.addBot(ana.userId);
+    t.service.leave(ana.userId);
+    expect(t.service.roomOf(ana.userId)).toBeUndefined();
+    expect(t.timer.pending).toHaveLength(0);
+  });
+});

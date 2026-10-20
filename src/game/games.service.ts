@@ -2,8 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ArenaService } from '../arena/arena.service';
 import { chargeUpTo } from '../coins/ledger';
 import {
+  BINGO_CPU_IDS,
+  bingoCpuName,
   CARD_COST,
   DEFAULT_WIN_PATTERN,
+  isBingoCpu,
   FREE_CELL,
   FREE_INDEX,
   letterFor,
@@ -35,6 +38,21 @@ export class GamesService {
     private readonly arena: ArenaService,
   ) {}
 
+  /** Quantas cartelas a CPU joga na próxima partida; só o host, só antes de começar. */
+  async setCpus(code: string, hostId: string, count: number): Promise<void> {
+    const room = await this.prisma.room.findUnique({ where: { code } });
+    if (!room || room.status === 'CLOSED')
+      throw new DomainError('NOT_FOUND', 'Sala não encontrada');
+    if (room.hostId !== hostId)
+      throw new DomainError('NOT_HOST', 'Só o host chama a CPU');
+    if (room.status !== 'WAITING')
+      throw new DomainError('INVALID_STATE', 'A partida já começou');
+    await this.prisma.room.update({
+      where: { id: room.id },
+      data: { cpuPlayers: count },
+    });
+  }
+
   start(
     code: string,
     hostId: string,
@@ -53,13 +71,15 @@ export class GamesService {
 
       const memberIds = room.members.map((m) => m.userId);
       const withCard = new Set(room.cards.map((c) => c.userId));
-      if (
-        memberIds.length < 2 ||
-        memberIds.filter((id) => withCard.has(id)).length < 2
-      ) {
+      const cpus = BINGO_CPU_IDS.slice(0, room.cpuPlayers);
+      // Com CPU, basta uma pessoa (todo mundo sem cartela recebe a automática).
+      const people = cpus.length
+        ? memberIds.length
+        : memberIds.filter((id) => withCard.has(id)).length;
+      if (memberIds.length + cpus.length < 2 || people + cpus.length < 2) {
         throw new DomainError(
           'NOT_ENOUGH_PLAYERS',
-          'São necessários ao menos 2 jogadores com cartela',
+          'São necessários ao menos 2 jogadores com cartela (ou chame a CPU)',
         );
       }
 
@@ -88,6 +108,15 @@ export class GamesService {
         // A cartela automática também custa; quem não tem saldo joga mesmo assim (não trava a partida).
         await chargeUpTo(tx, missing, CARD_COST, 'CARD', game.id);
       }
+      if (cpus.length > 0)
+        await tx.card.createMany({
+          data: cpus.map((userId) => ({
+            roomId: room.id,
+            userId,
+            gameId: game.id,
+            grid: generateGrid(this.random),
+          })),
+        });
       await tx.roomMember.updateMany({
         where: { roomId: room.id },
         data: { cardRegens: 0 },
@@ -203,12 +232,14 @@ export class GamesService {
         where: { id: game.roomId },
         data: { status: 'WAITING' },
       });
-      const losers = await tx.card.findMany({
+      const others = await tx.card.findMany({
         where: { gameId: game.id, userId: { not: user.id } },
         select: { userId: true },
       });
+      const cpuPlayers = others.filter((c) => isBingoCpu(c.userId)).length;
+      const losers = others.filter((c) => !isBingoCpu(c.userId));
       // Arena: todo mundo que tinha cartela entra no pote (inclusive quem saiu no meio);
-      // pontos só contam entre jogadores logados.
+      // pontos só contam entre jogadores logados. Com CPU na mesa: sem pote, só o agrado fixo.
       const results = await this.arena.settleIn(tx, {
         matchId: game.id,
         game: 'BINGO',
@@ -216,6 +247,7 @@ export class GamesService {
         bonusScale: room.winPattern === 'LINE' ? 0.5 : 1,
         stake: room.stake,
         skipGamesPlayed: true,
+        cpuPlayers,
         participants: [
           { userId: user.id, placement: 1 },
           ...losers.map((c) => ({ userId: c.userId, placement: 2 })),
@@ -234,6 +266,58 @@ export class GamesService {
       };
     });
     return { gameId: game.id, winner };
+  }
+
+  /**
+   * A CPU confere as cartelas dela antes de cada sorteio: se alguma completou (e ninguém
+   * gritou antes), ela faz bingo. Fecha a partida e liquida as pessoas como derrota contra a CPU.
+   */
+  async cpuBingo(gameId: string): Promise<Winner | null> {
+    const game = await this.prisma.game.findUnique({
+      where: { id: gameId },
+      include: { room: true },
+    });
+    if (!game || game.status !== 'IN_PROGRESS' || game.room.cpuPlayers === 0)
+      return null;
+    const drawn = new Set(await this.drawnNumbers(gameId));
+    const cards = await this.prisma.card.findMany({
+      where: { gameId },
+      select: { userId: true, grid: true },
+    });
+    const done = cards.find(
+      (c) =>
+        isBingoCpu(c.userId) &&
+        remainingFor(game.room.winPattern, c.grid, drawn) === 0,
+    );
+    if (!done) return null;
+    return this.prisma.$transaction(async (tx) => {
+      const won = await tx.game.updateMany({
+        where: { id: gameId, status: 'IN_PROGRESS', winnerId: null },
+        data: { status: 'FINISHED', finishedAt: new Date() },
+      });
+      if (won.count !== 1) return null;
+      await tx.room.update({
+        where: { id: game.roomId },
+        data: { status: 'WAITING' },
+      });
+      await this.arena.settleIn(tx, {
+        matchId: gameId,
+        game: 'BINGO',
+        durationMs: Date.now() - game.startedAt.getTime(),
+        skipGamesPlayed: true,
+        cpuPlayers: cards.filter((c) => isBingoCpu(c.userId)).length,
+        participants: cards
+          .filter((c) => !isBingoCpu(c.userId))
+          .map((c) => ({ userId: c.userId, placement: 2 })),
+      });
+      return {
+        userId: done.userId,
+        nickname: bingoCpuName(done.userId)!,
+        pointsAwarded: 0,
+        coinsAwarded: 0,
+        grid: done.grid,
+      };
+    });
   }
 
   async progress(gameId: string): Promise<Record<string, number>> {

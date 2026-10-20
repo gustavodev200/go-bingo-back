@@ -148,6 +148,8 @@ export interface BjSeatPlayer {
   userId: string;
   nickname: string;
   character: string | null;
+  /** CPU chamada pelo anfitrião (id sintético `cpu:N`). */
+  bot: boolean;
   ready: boolean;
   connected: boolean;
   /** Epoch ms when the reserved seat is released; null while connected. */
@@ -299,6 +301,9 @@ export const BjClientEvents = {
   SYNC: 'blackjack:sync',
   LEAVE: 'blackjack:leave',
   READY: 'blackjack:ready',
+  /** Host only, lobby only: a CPU takes the first free seat. */
+  ADD_BOT: 'blackjack:add_bot',
+  REMOVE_BOT: 'blackjack:remove_bot',
   START: 'blackjack:start',
   REMATCH: 'blackjack:rematch',
   BET: 'blackjack:bet',
@@ -337,6 +342,13 @@ export const bjVisibilitySchema = z.object({ isPublic: z.boolean() });
 export const bjSetRulesSchema = z.object({ rules: bjRulesSchema });
 export const bjJoinSchema = z.object({ code: roomCodeSchema });
 export const bjReadySchema = z.object({ ready: z.boolean() });
+export const bjRemoveBotSchema = z.object({
+  seat: z
+    .number()
+    .int()
+    .min(0)
+    .max(BJ_SEATS - 1),
+});
 export const bjBetSchema = z.object({
   actionId: actionIdSchema,
   amount: z
@@ -356,7 +368,7 @@ export const bjActSchema = z.object({
 });
 export const bjEmoteSchema = z.object({ emote: z.enum(BJ_EMOTES) });
 
-export type BjLeftReason = 'left' | 'expired';
+export type BjLeftReason = 'left' | 'expired' | 'removed';
 
 /** Every announcement carries a room-wide sequence number so clients can drop duplicates. */
 export interface BjServerEventPayloads {
@@ -422,6 +434,8 @@ export interface BjClientAckData {
   'blackjack:sync': BjSnapshot;
   'blackjack:leave': null;
   'blackjack:ready': null;
+  'blackjack:add_bot': null;
+  'blackjack:remove_bot': null;
   'blackjack:start': null;
   'blackjack:rematch': null;
   'blackjack:bet': null;

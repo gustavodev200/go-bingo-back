@@ -17,11 +17,13 @@ import {
   type BjSnapshot,
 } from '../contracts';
 import { ArenaService } from '../arena/arena.service';
+import { CPU_THINK_MS, cpuNickname, cpuUserId } from '../arena/cpu';
 import { MatchTracker } from '../arena/match-tracker';
 import { DomainError } from '../core/domain-error';
 import { RANDOM_INT, type RandomInt } from '../core/random';
 import { DRAW_TIMER, type DrawTimer } from '../game/draw-timer';
 import { generateRoomCode } from '../rooms/room-code';
+import { bjBotAction } from './engine/bot';
 import { BjMatch, type Announcement } from './engine/match';
 import { BJ_PUBLISHER, type BjPublisher } from './blackjack-publisher';
 
@@ -43,6 +45,8 @@ export interface BjPlayer {
 }
 
 interface SeatState extends BjPlayer {
+  /** CPU: joga sozinha, nunca segura a mesa aberta e não entra na Arena. */
+  bot: boolean;
   ready: boolean;
   sockets: Set<string>;
   reconnectDeadline: number | null;
@@ -68,6 +72,9 @@ interface Room {
   /** Match token the running stage timer belongs to. */
   stageToken: number | null;
   stageDeadline: number | null;
+  botCount: number;
+  /** Próxima ação de CPU agendada (decidida na hora em que dispara). */
+  botTimer: unknown;
 }
 
 /**
@@ -135,6 +142,8 @@ export class BjRoomsService implements OnModuleDestroy {
       stageTimer: undefined,
       stageToken: null,
       stageDeadline: null,
+      botCount: 0,
+      botTimer: undefined,
     };
     room.seats[0] = this.newSeat(player, socketId);
     this.rooms.set(code, room);
@@ -214,7 +223,7 @@ export class BjRoomsService implements OnModuleDestroy {
       );
     if (room.stake === stake) return;
     room.stake = stake;
-    for (const s of room.seats) if (s) s.ready = false;
+    for (const s of room.seats) if (s && !s.bot) s.ready = false;
     this.publish(room, []);
   }
 
@@ -228,8 +237,50 @@ export class BjRoomsService implements OnModuleDestroy {
   /** Quem aposta se a partida começar agora: todos os sentados, se forem 2 ou mais (sozinho é treino). */
   stakeCheck(userId: string): { stake: number; userIds: string[] } {
     const room = this.requireRoom(userId);
+    if (room.seats.some((s) => s?.bot))
+      return { stake: room.stake, userIds: [] };
     const userIds = room.seats.flatMap((s) => (s ? [s.userId] : []));
     return { stake: room.stake, userIds: userIds.length >= 2 ? userIds : [] };
+  }
+
+  /** O anfitrião completa a mesa com uma CPU (sempre pronta). */
+  addBot(userId: string): void {
+    const room = this.requireHost(userId, 'Só o anfitrião chama a CPU');
+    this.requirePhase(room, 'LOBBY');
+    const free = room.seats.findIndex((s) => s === null);
+    if (free < 0) throw new DomainError('ROOM_FULL', 'A mesa está cheia');
+    room.botCount++;
+    room.seats[free] = {
+      userId: cpuUserId(room.botCount),
+      nickname: cpuNickname(room.seats.filter((s) => s?.bot).length),
+      character: null,
+      bot: true,
+      ready: true,
+      sockets: new Set(),
+      reconnectDeadline: null,
+      expiryTimer: undefined,
+    };
+    this.publish(room, [
+      {
+        event: 'blackjack:player_joined',
+        payload: { player: this.seatView(room, free)! },
+      },
+    ]);
+  }
+
+  removeBot(userId: string, seat: number): void {
+    const room = this.requireHost(userId, 'Só o anfitrião tira a CPU');
+    this.requirePhase(room, 'LOBBY');
+    const bot = room.seats[seat];
+    if (!bot?.bot)
+      throw new DomainError('INVALID_STATE', 'Esse lugar não é da CPU');
+    room.seats[seat] = null;
+    this.publish(room, [
+      {
+        event: 'blackjack:player_left',
+        payload: { seat, userId: bot.userId, reason: 'removed' },
+      },
+    ]);
   }
 
   setVisibility(userId: string, isPublic: boolean): void {
@@ -306,12 +357,16 @@ export class BjRoomsService implements OnModuleDestroy {
     );
     room.phase = 'PLAYING';
     room.result = null;
-    // Sozinho é treino contra o dealer: nada vai para a Arena.
+    // Sozinho é treino contra o dealer: nada vai para a Arena. Com CPU, é partida contra a CPU.
+    const bots = seated.filter((s) => s.bot).length;
     room.tracker =
       seated.length >= 2
         ? new MatchTracker(
-            seated.map((s, i) => ({ seat: seats[i], userId: s.userId })),
+            seated.flatMap((s, i) =>
+              s.bot ? [] : [{ seat: seats[i], userId: s.userId }],
+            ),
             this.now(),
+            bots,
           )
         : null;
     this.afterMatchChange(room, [
@@ -330,7 +385,7 @@ export class BjRoomsService implements OnModuleDestroy {
     room.phase = 'LOBBY';
     room.match = null;
     room.result = null;
-    for (const s of room.seats) if (s) s.ready = false;
+    for (const s of room.seats) if (s && !s.bot) s.ready = false;
     this.publish(room, []);
   }
 
@@ -383,6 +438,30 @@ export class BjRoomsService implements OnModuleDestroy {
       this.startStageClock(room, match);
     }
     this.publish(room, out);
+    this.driveBots(room);
+  }
+
+  /** As CPUs apostam, recusam o seguro e jogam a própria mão depois de uma pausa. */
+  private driveBots(room: Room): void {
+    if (room.botTimer || room.phase !== 'PLAYING' || !room.match) return;
+    if (!room.seats.some((s) => s?.bot)) return;
+    const match = room.match;
+    room.botTimer = this.timer.set(() => {
+      room.botTimer = undefined;
+      if (this.rooms.get(room.code) !== room || room.match !== match) return;
+      if (room.phase !== 'PLAYING') return;
+      let out: Announcement[] | null;
+      try {
+        out = bjBotAction(
+          match,
+          (seat) => room.seats[seat]?.bot ?? false,
+          this.random,
+        );
+      } catch {
+        out = null;
+      }
+      if (out) this.afterMatchChange(room, out);
+    }, CPU_THINK_MS);
   }
 
   /**
@@ -395,7 +474,8 @@ export class BjRoomsService implements OnModuleDestroy {
     const standings = room.result?.standings ?? [];
     if (!tracker || standings.length < 2) return;
     const placement = new Map(standings.map((s) => [s.seat, s.placement]));
-    if (standings.every((s) => s.placement === 1)) return;
+    if (standings.every((s) => s.placement === 1) && tracker.cpuPlayers === 0)
+      return;
     void this.arena.settleSafe({
       matchId: tracker.matchId,
       game: 'BLACKJACK',
@@ -404,6 +484,7 @@ export class BjRoomsService implements OnModuleDestroy {
       participants: tracker.participants(
         (seat) => placement.get(seat) ?? standings.length,
       ),
+      cpuPlayers: tracker.cpuPlayers,
     });
   }
 
@@ -439,7 +520,7 @@ export class BjRoomsService implements OnModuleDestroy {
       { event: 'blackjack:player_left', payload: { seat, userId, reason } },
     ];
 
-    if (room.seats.every((s) => s === null)) {
+    if (!room.seats.some((s) => s && !s.bot)) {
       // Only a solo table empties mid-match (with two or more the match ends first): nothing to settle.
       this.clearTimers(room);
       this.rooms.delete(room.code);
@@ -447,8 +528,10 @@ export class BjRoomsService implements OnModuleDestroy {
       return;
     }
     if (room.hostId === userId) {
-      const next = room.seats.find((s) => s && s.sockets.size > 0);
-      room.hostId = (next ?? room.seats.find((s) => s !== null)!).userId;
+      const humans = room.seats.filter((s): s is SeatState => !!s && !s.bot);
+      room.hostId = (
+        humans.find((s) => s.sockets.size > 0) ?? humans[0]
+      ).userId;
     }
     if (room.phase === 'PLAYING' && room.match) {
       room.tracker?.markLeft(seat);
@@ -519,6 +602,7 @@ export class BjRoomsService implements OnModuleDestroy {
       userId: s.userId,
       nickname: s.nickname,
       character: s.character,
+      bot: s.bot,
       ready: s.ready,
       connected: s.reconnectDeadline === null,
       reconnectDeadline: s.reconnectDeadline,
@@ -535,6 +619,7 @@ export class BjRoomsService implements OnModuleDestroy {
   private newSeat(player: BjPlayer, socketId: string): SeatState {
     return {
       ...player,
+      bot: false,
       ready: false,
       sockets: new Set([socketId]),
       reconnectDeadline: null,
@@ -577,6 +662,7 @@ export class BjRoomsService implements OnModuleDestroy {
 
   private clearTimers(room: Room): void {
     this.timer.clear(room.stageTimer);
+    this.timer.clear(room.botTimer);
     for (const s of room.seats) if (s) this.timer.clear(s.expiryTimer);
   }
 }

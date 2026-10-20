@@ -1,4 +1,4 @@
-import { CARD_COST, FREE_INDEX } from '../contracts';
+import { BINGO_CPU_IDS, CARD_COST, FREE_INDEX } from '../contracts';
 import type { ArenaService } from '../arena/arena.service';
 import type { AuthUser } from '../core/auth/jwt-verifier';
 import { Prisma } from '../generated/prisma/client';
@@ -115,6 +115,7 @@ describe('GamesService.start', () => {
       id: 'r1',
       hostId: 'host',
       status: 'WAITING',
+      cpuPlayers: 0,
       members: [],
       cards: [],
     });
@@ -155,6 +156,7 @@ describe('GamesService.start', () => {
       id: 'r1',
       hostId: 'host',
       status: 'WAITING',
+      cpuPlayers: 0,
       members: [{ userId: 'host' }],
       cards: [{ userId: 'host' }],
     });
@@ -175,6 +177,7 @@ describe('GamesService.start', () => {
       id: 'r1',
       hostId: 'host',
       status: 'WAITING',
+      cpuPlayers: 0,
       members: [{ userId: 'host' }, { userId: 'guest' }],
       cards: [{ userId: 'host' }],
     });
@@ -195,6 +198,7 @@ describe('GamesService.start', () => {
       id: 'r1',
       hostId: 'host',
       status: 'WAITING',
+      cpuPlayers: 0,
       members: [{ userId: 'host' }, { userId: 'guest' }],
       cards: [{ userId: 'host' }, { userId: 'guest' }],
       drawIntervalMs: 5_000,
@@ -217,6 +221,7 @@ describe('GamesService.start', () => {
       id: 'r1',
       hostId: 'host',
       status: 'WAITING',
+      cpuPlayers: 0,
       members: [{ userId: 'host' }, { userId: 'guest' }, { userId: 'late' }],
       cards: [{ userId: 'host' }, { userId: 'guest' }],
       drawIntervalMs: 7_000,
@@ -270,6 +275,7 @@ describe('GamesService.start', () => {
       id: 'r1',
       hostId: 'host',
       status: 'WAITING',
+      cpuPlayers: 0,
       members: [{ userId: 'host' }, { userId: 'guest' }],
       cards: [{ userId: 'host' }, { userId: 'guest' }],
       drawIntervalMs: 5_000,
@@ -993,5 +999,121 @@ describe('GamesService.endIfNoPlayers', () => {
 
     await expect(service.endIfNoPlayers('ABC123')).resolves.toBeNull();
     expect(prisma.room.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('GamesService with the CPU', () => {
+  const CPU1 = BINGO_CPU_IDS[0];
+
+  it('one person plus the CPU is enough: the CPU cards are dealt with the game', async () => {
+    const prisma = makePrisma();
+    prisma.room.findUnique.mockResolvedValue({
+      id: 'r1',
+      hostId: 'host',
+      status: 'WAITING',
+      cpuPlayers: 2,
+      members: [{ userId: 'host' }],
+      cards: [],
+      drawIntervalMs: 5_000,
+    });
+    prisma.room.updateMany.mockResolvedValue({ count: 1 });
+    prisma.game.create.mockResolvedValue({ id: 'game-1' });
+    const service = new GamesService(
+      prisma as unknown as PrismaService,
+      random,
+      makeArena(),
+    );
+
+    await service.start('ABC123', 'host');
+
+    expect(prisma.card.createMany).toHaveBeenLastCalledWith({
+      data: [
+        expect.objectContaining({ userId: BINGO_CPU_IDS[0], gameId: 'game-1' }),
+        expect.objectContaining({ userId: BINGO_CPU_IDS[1], gameId: 'game-1' }),
+      ],
+    });
+  });
+
+  it('only the host sets the CPUs, only before the game', async () => {
+    const prisma = makePrisma();
+    const service = new GamesService(
+      prisma as unknown as PrismaService,
+      random,
+      makeArena(),
+    );
+    prisma.room.findUnique.mockResolvedValue({
+      id: 'r1',
+      hostId: 'host',
+      status: 'WAITING',
+    });
+    await expect(service.setCpus('ABC123', 'other', 1)).rejects.toMatchObject({
+      code: 'NOT_HOST',
+    });
+    await service.setCpus('ABC123', 'host', 3);
+    expect(prisma.room.update).toHaveBeenCalledWith({
+      where: { id: 'r1' },
+      data: { cpuPlayers: 3 },
+    });
+    prisma.room.findUnique.mockResolvedValue({
+      id: 'r1',
+      hostId: 'host',
+      status: 'IN_GAME',
+    });
+    await expect(service.setCpus('ABC123', 'host', 1)).rejects.toMatchObject({
+      code: 'INVALID_STATE',
+    });
+  });
+
+  it('the CPU shouts bingo with a full card and the people settle as a CPU match', async () => {
+    const prisma = makePrisma();
+    const arena = makeArena();
+    const service = new GamesService(
+      prisma as unknown as PrismaService,
+      random,
+      arena,
+    );
+    const grid = Array.from({ length: 25 }, (_, i) => (i === 12 ? 0 : i + 1));
+    prisma.game.findUnique.mockResolvedValue({
+      id: 'g1',
+      roomId: 'r1',
+      status: 'IN_PROGRESS',
+      startedAt: new Date(Date.now() - 120_000),
+      room: { cpuPlayers: 1, winPattern: 'FULL_CARD' },
+    });
+    prisma.draw.findMany.mockResolvedValue(
+      grid.filter((n) => n > 0).map((number) => ({ number })),
+    );
+    prisma.card.findMany.mockResolvedValue([
+      { userId: CPU1, grid },
+      { userId: 'u1', grid: grid.map((n) => (n > 0 ? n + 50 : 0)) },
+    ]);
+    prisma.game.updateMany.mockResolvedValue({ count: 1 });
+
+    const winner = await service.cpuBingo('g1');
+
+    expect(winner).toMatchObject({ userId: CPU1, nickname: 'CPU 1' });
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(arena.settleIn).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        cpuPlayers: 1,
+        participants: [{ userId: 'u1', placement: 2 }],
+      }),
+    );
+  });
+
+  it('no CPU card complete: nothing happens', async () => {
+    const prisma = makePrisma();
+    const service = new GamesService(
+      prisma as unknown as PrismaService,
+      random,
+      makeArena(),
+    );
+    prisma.game.findUnique.mockResolvedValue({
+      id: 'g1',
+      status: 'IN_PROGRESS',
+      room: { cpuPlayers: 0, winPattern: 'FULL_CARD' },
+    });
+    await expect(service.cpuBingo('g1')).resolves.toBeNull();
   });
 });

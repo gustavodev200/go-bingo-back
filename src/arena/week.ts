@@ -17,6 +17,14 @@ export function weekStart(now: Date): Date {
   return new Date(today.getTime() - sinceMonday * DAY_MS);
 }
 
+/** Instante em que começa o dia (00:00 em São Paulo) que contém `now`. */
+export function dayStart(now: Date): Date {
+  const ymd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+  }).format(now);
+  return new Date(`${ymd}T00:00:00${SP_OFFSET}`);
+}
+
 export function addWeeks(start: Date, weeks: number): Date {
   return new Date(start.getTime() + weeks * 7 * DAY_MS);
 }

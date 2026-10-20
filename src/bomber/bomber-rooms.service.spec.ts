@@ -151,7 +151,7 @@ describe('BomberRoomsService', () => {
     expect(service.roomOf('a')).toBe(snap.state.code);
   });
 
-  it('the stake is bet only by humans; alone against the CPU nothing is checked', () => {
+  it('with a CPU at the table nothing is bet (CPU match); without it every human bets', () => {
     const code = roomWith(1, false);
     service.addBot('a');
     expect(service.stakeCheck('a')).toEqual({ stake: 30, userIds: [] });
@@ -160,6 +160,8 @@ describe('BomberRoomsService', () => {
     service.setStake('a', 60);
     expect(state().stake).toBe(60);
     expect(state().seats[0]?.ready).toBe(false);
+    expect(service.stakeCheck('a')).toEqual({ stake: 60, userIds: [] });
+    service.removeBot('a', 1);
     expect(service.stakeCheck('a')).toEqual({ stake: 60, userIds: ['a', 'b'] });
   });
 

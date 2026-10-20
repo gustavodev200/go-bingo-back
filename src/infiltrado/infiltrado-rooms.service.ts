@@ -258,6 +258,8 @@ export class InfRoomsService implements OnModuleDestroy {
   /** Quem aposta se a partida começar agora: os humanos sentados (sozinho contra CPU não vale nada). */
   stakeCheck(userId: string): { stake: number; userIds: string[] } {
     const room = this.requireRoom(userId);
+    if (room.seats.some((s) => s?.bot))
+      return { stake: room.stake, userIds: [] };
     const userIds = room.seats.flatMap((s) => (s && !s.bot ? [s.userId] : []));
     return { stake: room.stake, userIds: userIds.length >= 2 ? userIds : [] };
   }
@@ -388,6 +390,7 @@ export class InfRoomsService implements OnModuleDestroy {
         s && !s.bot ? [{ seat: i, userId: s.userId }] : [],
       ),
       this.now(),
+      room.seats.filter((s) => s?.bot).length,
     );
     const impostors = Math.min(
       room.rules.impostors,
@@ -516,6 +519,7 @@ export class InfRoomsService implements OnModuleDestroy {
       stake: room.stake,
       durationMs: tracker.durationMs(this.now()),
       participants: tracker.participants(placeOf),
+      cpuPlayers: tracker.cpuPlayers,
     });
   }
 

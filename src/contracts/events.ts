@@ -23,6 +23,8 @@ export const ClientEvents = {
   BINGO_CLAIM: 'bingo:claim',
   GAME_REPLAY: 'game:replay',
   ROOM_EMOTE: 'room:emote',
+  /** Só o host, só antes da partida: quantas cartelas a CPU joga (0 a BINGO_MAX_CPUS). */
+  ROOM_SET_CPUS: 'room:set_cpus',
 } as const;
 
 export const ServerEvents = {
@@ -123,6 +125,7 @@ export interface ClientAckData {
   'bingo:claim': Winner;
   'game:replay': null;
   'room:emote': null;
+  'room:set_cpus': null;
 }
 
 export const PUBLIC_ROOMS_CHANNEL = 'public-rooms';

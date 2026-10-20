@@ -11,6 +11,7 @@ function makeDeps() {
   const games = {
     start: jest.fn(),
     drawNext: jest.fn(),
+    cpuBingo: jest.fn().mockResolvedValue(null),
     progress: jest.fn(),
     findInProgress: jest.fn(),
   };
@@ -259,5 +260,23 @@ describe('GameRunner.onModuleDestroy', () => {
     runner.onModuleDestroy();
 
     expect(timer.clear).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('GameRunner.tick with the CPU', () => {
+  it('a CPU bingo ends the game before the next draw', async () => {
+    const { runner, games, publisher, timer } = makeDeps();
+    const winner = { userId: 'cpu', nickname: 'CPU 1' };
+    games.cpuBingo.mockResolvedValue(winner);
+
+    await runner.tick('g1', 'ABC123', 5_000);
+
+    expect(publisher.toRoom).toHaveBeenCalledWith(
+      'ABC123',
+      ServerEvents.GAME_WON,
+      winner,
+    );
+    expect(games.drawNext).not.toHaveBeenCalled();
+    expect(timer.set).not.toHaveBeenCalled();
   });
 });

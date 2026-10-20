@@ -139,6 +139,8 @@ export interface TrucoSeatPlayer {
   userId: string;
   nickname: string;
   character: string | null;
+  /** CPU chamada pelo anfitrião (id sintético `cpu:N`). */
+  bot: boolean;
   ready: boolean;
   connected: boolean;
   /** Epoch ms when the reserved seat is released; null while connected. */
@@ -288,6 +290,9 @@ export const TrucoClientEvents = {
   LEAVE: 'truco:leave',
   TAKE_SEAT: 'truco:take_seat',
   READY: 'truco:ready',
+  /** Host only, lobby only: a CPU takes the first free seat. */
+  ADD_BOT: 'truco:add_bot',
+  REMOVE_BOT: 'truco:remove_bot',
   START: 'truco:start',
   PLAY_CARD: 'truco:play_card',
   REQUEST_BET: 'truco:request_bet',
@@ -339,6 +344,13 @@ export const trucoTakeSeatSchema = z.object({
   seat: z.number().int().min(0).max(3),
 });
 export const trucoReadySchema = z.object({ ready: z.boolean() });
+export const trucoRemoveBotSchema = z.object({
+  seat: z
+    .number()
+    .int()
+    .min(0)
+    .max(TRUCO_SEATS - 1),
+});
 export const trucoPlayCardSchema = z.object({
   actionId: actionIdSchema,
   cardId: z.string().min(1).max(32),
@@ -359,7 +371,7 @@ export const trucoSignalSchema = z.object({
   gesture: z.enum(TRUCO_GESTURES),
 });
 
-export type TrucoLeftReason = 'left' | 'expired';
+export type TrucoLeftReason = 'left' | 'expired' | 'removed';
 export type TrucoClosedReason = 'empty';
 
 /** Every announcement carries a room-wide sequence number so clients can drop duplicates. */
@@ -434,6 +446,8 @@ export interface TrucoClientAckData {
   'truco:leave': null;
   'truco:take_seat': null;
   'truco:ready': null;
+  'truco:add_bot': null;
+  'truco:remove_bot': null;
   'truco:start': null;
   'truco:play_card': null;
   'truco:request_bet': null;

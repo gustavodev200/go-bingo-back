@@ -74,6 +74,8 @@ export interface TacadaSeatPlayer {
   userId: string;
   nickname: string;
   character: string | null;
+  /** CPU chamada pelo anfitrião (id sintético `cpu:N`). */
+  bot: boolean;
   ready: boolean;
   connected: boolean;
   /** Epoch ms when the reserved seat is released; null while connected. */
@@ -209,6 +211,9 @@ export const TacadaClientEvents = {
   SYNC: 'tacada:sync',
   LEAVE: 'tacada:leave',
   READY: 'tacada:ready',
+  /** Host only, lobby only: a CPU takes the first free seat. */
+  ADD_BOT: 'tacada:add_bot',
+  REMOVE_BOT: 'tacada:remove_bot',
   START: 'tacada:start',
   REMATCH: 'tacada:rematch',
   /** Mira ao vivo (só quem joga; repassada ao adversário, sem confirmação). */
@@ -246,6 +251,13 @@ export const tacadaVisibilitySchema = z.object({ isPublic: z.boolean() });
 export const tacadaSetRulesSchema = z.object({ rules: tacadaRulesSchema });
 export const tacadaJoinSchema = z.object({ code: roomCodeSchema });
 export const tacadaReadySchema = z.object({ ready: z.boolean() });
+export const tacadaRemoveBotSchema = z.object({
+  seat: z
+    .number()
+    .int()
+    .min(0)
+    .max(TACADA_SEATS - 1),
+});
 export const tacadaActionSchema = z.object({ actionId: actionIdSchema });
 export const tacadaShootSchema = z.object({
   actionId: actionIdSchema,
@@ -270,7 +282,7 @@ export const tacadaAimSchema = z.object({
 });
 export const tacadaEmoteSchema = z.object({ emote: z.enum(TACADA_EMOTES) });
 
-export type TacadaLeftReason = 'left' | 'expired';
+export type TacadaLeftReason = 'left' | 'expired' | 'removed';
 
 export interface TacadaAim {
   seat: number;
@@ -323,6 +335,8 @@ export interface TacadaClientAckData {
   'tacada:sync': TacadaSnapshot;
   'tacada:leave': null;
   'tacada:ready': null;
+  'tacada:add_bot': null;
+  'tacada:remove_bot': null;
   'tacada:start': null;
   'tacada:rematch': null;
   'tacada:aim': null;

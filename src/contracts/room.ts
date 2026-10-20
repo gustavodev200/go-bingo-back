@@ -38,6 +38,27 @@ export const createRoomSchema = z.object({
 });
 export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 
+/**
+ * CPU no bingo: cartelas extras jogadas pelo servidor (sem perfil, ids fixos abaixo). A CPU
+ * "grita bingo" no sorteio seguinte ao que completou a cartela, se ninguém gritou antes.
+ */
+export const BINGO_MAX_CPUS = 3;
+export const BINGO_CPU_IDS = [
+  '00000000-0000-4000-8000-00000000c001',
+  '00000000-0000-4000-8000-00000000c002',
+  '00000000-0000-4000-8000-00000000c003',
+] as const;
+export const isBingoCpu = (userId: string) =>
+  (BINGO_CPU_IDS as readonly string[]).includes(userId);
+/** "CPU 1", "CPU 2"… pelo id fixo; null quando não é CPU. */
+export function bingoCpuName(userId: string): string | null {
+  const i = (BINGO_CPU_IDS as readonly string[]).indexOf(userId);
+  return i < 0 ? null : `CPU ${i + 1}`;
+}
+export const setCpusPayloadSchema = z.object({
+  count: z.number().int().min(0).max(BINGO_MAX_CPUS),
+});
+
 export const roomStatusSchema = z.enum(['WAITING', 'IN_GAME', 'CLOSED']);
 export type RoomStatus = z.infer<typeof roomStatusSchema>;
 
@@ -88,6 +109,8 @@ export const roomSnapshotSchema = z.object({
   status: roomStatusSchema,
   winPattern: winPatternSchema,
   stake: z.number().int().default(minStake('BINGO')),
+  /** Cartelas da CPU na próxima partida (ou na que está rolando). */
+  cpuPlayers: z.number().int().min(0).max(BINGO_MAX_CPUS).default(0),
   members: z.array(memberSchema),
   myCard: cardSchema.nullable(),
   game: gameStateSchema.nullable(),

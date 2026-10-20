@@ -16,11 +16,13 @@ import {
   type DamasSnapshot,
 } from '../contracts';
 import { ArenaService } from '../arena/arena.service';
+import { CPU_THINK_MS, cpuNickname, cpuUserId } from '../arena/cpu';
 import { MatchTracker } from '../arena/match-tracker';
 import { DomainError } from '../core/domain-error';
 import { RANDOM_INT, type RandomInt } from '../core/random';
 import { DRAW_TIMER, type DrawTimer } from '../game/draw-timer';
 import { generateRoomCode } from '../rooms/room-code';
+import { damasBotTurn } from './engine/bot';
 import { DamasMatch, type Announcement } from './engine/match';
 import { DAMAS_PUBLISHER, type DamasPublisher } from './damas-publisher';
 
@@ -42,6 +44,8 @@ export interface DamasPlayer {
 }
 
 interface SeatState extends DamasPlayer {
+  /** CPU: joga sozinha, nunca segura a mesa aberta e não entra na Arena. */
+  bot: boolean;
   ready: boolean;
   sockets: Set<string>;
   reconnectDeadline: number | null;
@@ -69,6 +73,10 @@ interface Room {
   /** Turn token the running turn timer belongs to. */
   turnToken: number | null;
   turnDeadline: number | null;
+  botCount: number;
+  botTimer: unknown;
+  /** Turn token the scheduled CPU move belongs to. */
+  botToken: number | null;
 }
 
 /**
@@ -137,6 +145,9 @@ export class DamasRoomsService implements OnModuleDestroy {
       turnTimer: undefined,
       turnToken: null,
       turnDeadline: null,
+      botCount: 0,
+      botTimer: undefined,
+      botToken: null,
     };
     room.seats[0] = this.newSeat(player, socketId);
     this.rooms.set(code, room);
@@ -216,7 +227,7 @@ export class DamasRoomsService implements OnModuleDestroy {
       );
     if (room.stake === stake) return;
     room.stake = stake;
-    for (const s of room.seats) if (s) s.ready = false;
+    for (const s of room.seats) if (s && !s.bot) s.ready = false;
     this.publish(room, []);
   }
 
@@ -230,8 +241,50 @@ export class DamasRoomsService implements OnModuleDestroy {
   /** Quem aposta se a partida começar agora: os dois sentados. */
   stakeCheck(userId: string): { stake: number; userIds: string[] } {
     const room = this.requireRoom(userId);
+    if (room.seats.some((s) => s?.bot))
+      return { stake: room.stake, userIds: [] };
     const userIds = room.seats.flatMap((s) => (s ? [s.userId] : []));
     return { stake: room.stake, userIds: userIds.length >= 2 ? userIds : [] };
+  }
+
+  /** O anfitrião completa a mesa com uma CPU (sempre pronta). */
+  addBot(userId: string): void {
+    const room = this.requireHost(userId, 'Só o anfitrião chama a CPU');
+    this.requirePhase(room, 'LOBBY');
+    const free = room.seats.findIndex((s) => s === null);
+    if (free < 0) throw new DomainError('ROOM_FULL', 'A mesa está cheia');
+    room.botCount++;
+    room.seats[free] = {
+      userId: cpuUserId(room.botCount),
+      nickname: cpuNickname(room.seats.filter((s) => s?.bot).length),
+      character: null,
+      bot: true,
+      ready: true,
+      sockets: new Set(),
+      reconnectDeadline: null,
+      expiryTimer: undefined,
+    };
+    this.publish(room, [
+      {
+        event: 'damas:player_joined',
+        payload: { player: this.seatView(room, free)! },
+      },
+    ]);
+  }
+
+  removeBot(userId: string, seat: number): void {
+    const room = this.requireHost(userId, 'Só o anfitrião tira a CPU');
+    this.requirePhase(room, 'LOBBY');
+    const bot = room.seats[seat];
+    if (!bot?.bot)
+      throw new DomainError('INVALID_STATE', 'Esse lugar não é da CPU');
+    room.seats[seat] = null;
+    this.publish(room, [
+      {
+        event: 'damas:player_left',
+        payload: { seat, userId: bot.userId, reason: 'removed' },
+      },
+    ]);
   }
 
   setVisibility(userId: string, isPublic: boolean): void {
@@ -307,8 +360,11 @@ export class DamasRoomsService implements OnModuleDestroy {
     room.phase = 'PLAYING';
     room.result = null;
     room.tracker = new MatchTracker(
-      seated.map((s) => ({ seat: room.seats.indexOf(s), userId: s.userId })),
+      seated
+        .filter((s) => !s.bot)
+        .map((s) => ({ seat: room.seats.indexOf(s), userId: s.userId })),
       this.now(),
+      seated.filter((s) => s.bot).length,
     );
     this.afterMatchChange(room, [
       { event: 'damas:match_started', payload: { whiteSeat: white } },
@@ -323,7 +379,7 @@ export class DamasRoomsService implements OnModuleDestroy {
     room.match = null;
     room.result = null;
     room.whiteSeat = 1 - room.whiteSeat;
-    for (const s of room.seats) if (s) s.ready = false;
+    for (const s of room.seats) if (s && !s.bot) s.ready = false;
     this.publish(room, []);
   }
 
@@ -381,23 +437,49 @@ export class DamasRoomsService implements OnModuleDestroy {
       this.startTurnClock(room, match);
     }
     this.publish(room, out);
+    this.driveBot(room, match);
+  }
+
+  /** Vez de uma CPU: joga depois de uma pausa (se a vez ainda for dela). */
+  private driveBot(room: Room, match: DamasMatch): void {
+    if (match.phase !== 'PLAYING' || !room.seats[match.turnSeat]?.bot) return;
+    const token = match.turnToken;
+    if (room.botToken === token) return;
+    this.timer.clear(room.botTimer);
+    room.botToken = token;
+    room.botTimer = this.timer.set(() => {
+      room.botTimer = undefined;
+      room.botToken = null;
+      if (this.rooms.get(room.code) !== room || room.match !== match) return;
+      if (match.phase !== 'PLAYING' || match.turnToken !== token) return;
+      const seat = match.turnSeat;
+      let out: Announcement[];
+      try {
+        out = damasBotTurn(match, seat, this.random);
+      } catch {
+        out = match.timeout();
+      }
+      this.afterMatchChange(room, out);
+    }, CPU_THINK_MS);
   }
 
   /**
    * Moedas e ranking: o vencedor leva o pote. Empate (acordo ou regra dos lances)
    * não é liquidado: ninguém paga e ninguém pontua, o que também evita combinar empates.
+   * Contra a CPU o empate conta como partida jogada (sem vitória).
    */
   private settle(room: Room): void {
     const tracker = room.tracker;
     room.tracker = null;
     const winner = room.result?.winner ?? null;
-    if (!tracker || winner === null) return;
+    if (!tracker || (winner === null && tracker.cpuPlayers === 0)) return;
     void this.arena.settleSafe({
       matchId: tracker.matchId,
       game: 'DAMAS',
       stake: room.stake,
       durationMs: tracker.durationMs(this.now()),
       participants: tracker.participants((seat) => (seat === winner ? 1 : 2)),
+      cpuPlayers: tracker.cpuPlayers,
     });
   }
 
@@ -437,15 +519,17 @@ export class DamasRoomsService implements OnModuleDestroy {
       { event: 'damas:player_left', payload: { seat, userId, reason } },
     ];
 
-    if (room.seats.every((s) => s === null)) {
+    if (!room.seats.some((s) => s && !s.bot)) {
       this.clearTimers(room);
       this.rooms.delete(room.code);
       this.publisher.publicRoomsChanged(() => this.listPublic());
       return;
     }
     if (room.hostId === userId) {
-      const next = room.seats.find((s) => s && s.sockets.size > 0);
-      room.hostId = (next ?? room.seats.find((s) => s !== null)!).userId;
+      const humans = room.seats.filter((s): s is SeatState => !!s && !s.bot);
+      room.hostId = (
+        humans.find((s) => s.sockets.size > 0) ?? humans[0]
+      ).userId;
     }
     if (room.phase === 'PLAYING' && room.match) {
       // Leaving (or not coming back) mid-match hands the win to the other player.
@@ -518,6 +602,7 @@ export class DamasRoomsService implements OnModuleDestroy {
       userId: s.userId,
       nickname: s.nickname,
       character: s.character,
+      bot: s.bot,
       ready: s.ready,
       connected: s.reconnectDeadline === null,
       reconnectDeadline: s.reconnectDeadline,
@@ -534,6 +619,7 @@ export class DamasRoomsService implements OnModuleDestroy {
   private newSeat(player: DamasPlayer, socketId: string): SeatState {
     return {
       ...player,
+      bot: false,
       ready: false,
       sockets: new Set([socketId]),
       reconnectDeadline: null,
@@ -576,6 +662,7 @@ export class DamasRoomsService implements OnModuleDestroy {
 
   private clearTimers(room: Room): void {
     this.timer.clear(room.turnTimer);
+    this.timer.clear(room.botTimer);
     for (const s of room.seats) if (s) this.timer.clear(s.expiryTimer);
   }
 }

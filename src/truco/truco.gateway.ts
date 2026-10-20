@@ -21,6 +21,7 @@ import {
   trucoModeSchema,
   trucoPlayCardSchema,
   trucoReadySchema,
+  trucoRemoveBotSchema,
   trucoRequestBetSchema,
   trucoRespondBetSchema,
   trucoSignalSchema,
@@ -282,6 +283,34 @@ export class TrucoGateway
       body,
       (user, { ready }) => {
         this.tables.setReady(user.id, ready);
+        return Promise.resolve(null);
+      },
+    );
+  }
+
+  @SubscribeMessage(TrucoClientEvents.ADD_BOT)
+  onAddBot(
+    @ConnectedSocket() socket: TrucoSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(socket, 'default', trucoEmptySchema, body, (user) => {
+      this.tables.addBot(user.id);
+      return Promise.resolve(null);
+    });
+  }
+
+  @SubscribeMessage(TrucoClientEvents.REMOVE_BOT)
+  onRemoveBot(
+    @ConnectedSocket() socket: TrucoSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      trucoRemoveBotSchema,
+      body,
+      (user, { seat }) => {
+        this.tables.removeBot(user.id, seat as Seat);
         return Promise.resolve(null);
       },
     );

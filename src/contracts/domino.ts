@@ -62,6 +62,8 @@ export interface DominoSeatPlayer {
   userId: string;
   nickname: string;
   character: string | null;
+  /** CPU chamada pelo anfitrião (id sintético `cpu:N`). */
+  bot: boolean;
   ready: boolean;
   connected: boolean;
   /** Epoch ms when the reserved seat is released; null while connected. */
@@ -193,6 +195,9 @@ export const DominoClientEvents = {
   SYNC: 'domino:sync',
   LEAVE: 'domino:leave',
   READY: 'domino:ready',
+  /** Host only, lobby only: a CPU takes the first free seat. */
+  ADD_BOT: 'domino:add_bot',
+  REMOVE_BOT: 'domino:remove_bot',
   START: 'domino:start',
   REMATCH: 'domino:rematch',
   PLAY: 'domino:play',
@@ -230,6 +235,13 @@ export const dominoVisibilitySchema = z.object({ isPublic: z.boolean() });
 export const dominoSetRulesSchema = z.object({ rules: dominoRulesSchema });
 export const dominoJoinSchema = z.object({ code: roomCodeSchema });
 export const dominoReadySchema = z.object({ ready: z.boolean() });
+export const dominoRemoveBotSchema = z.object({
+  seat: z
+    .number()
+    .int()
+    .min(0)
+    .max(DOMINO_SEATS - 1),
+});
 export const dominoActionSchema = z.object({ actionId: actionIdSchema });
 export const dominoPlaySchema = z.object({
   actionId: actionIdSchema,
@@ -239,7 +251,7 @@ export const dominoPlaySchema = z.object({
 });
 export const dominoEmoteSchema = z.object({ emote: z.enum(DOMINO_EMOTES) });
 
-export type DominoLeftReason = 'left' | 'expired';
+export type DominoLeftReason = 'left' | 'expired' | 'removed';
 
 /** Every announcement carries a room-wide sequence number so clients can drop duplicates. */
 export interface DominoServerEventPayloads {
@@ -289,6 +301,8 @@ export interface DominoClientAckData {
   'domino:sync': DominoSnapshot;
   'domino:leave': null;
   'domino:ready': null;
+  'domino:add_bot': null;
+  'domino:remove_bot': null;
   'domino:start': null;
   'domino:rematch': null;
   'domino:play': null;

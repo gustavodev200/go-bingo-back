@@ -94,6 +94,8 @@ export interface UnoSeatPlayer {
   userId: string;
   nickname: string;
   character: string | null;
+  /** CPU chamada pelo anfitrião (id sintético `cpu:N`). */
+  bot: boolean;
   ready: boolean;
   connected: boolean;
   /** Epoch ms when the reserved seat is released; null while connected. */
@@ -215,6 +217,9 @@ export const UnoClientEvents = {
   SYNC: 'uno:sync',
   LEAVE: 'uno:leave',
   READY: 'uno:ready',
+  /** Host only, lobby only: a CPU takes the first free seat. */
+  ADD_BOT: 'uno:add_bot',
+  REMOVE_BOT: 'uno:remove_bot',
   START: 'uno:start',
   REMATCH: 'uno:rematch',
   PLAY_CARD: 'uno:play_card',
@@ -262,6 +267,13 @@ export const unoVisibilitySchema = z.object({ isPublic: z.boolean() });
 export const unoSetRulesSchema = z.object({ rules: unoRulesSchema });
 export const unoJoinSchema = z.object({ code: roomCodeSchema });
 export const unoReadySchema = z.object({ ready: z.boolean() });
+export const unoRemoveBotSchema = z.object({
+  seat: z
+    .number()
+    .int()
+    .min(0)
+    .max(UNO_SEATS - 1),
+});
 export const unoActionSchema = z.object({ actionId: actionIdSchema });
 export const unoPlayCardSchema = z.object({
   actionId: actionIdSchema,
@@ -282,7 +294,7 @@ export type UnoPlayOptions = Pick<
 >;
 export const unoEmoteSchema = z.object({ emote: z.enum(UNO_EMOTES) });
 
-export type UnoLeftReason = 'left' | 'expired';
+export type UnoLeftReason = 'left' | 'expired' | 'removed';
 /** choice = drew on purpose; penalty = +2/+4/stack; challenge = lost (or was caught by) a challenge. */
 export type UnoDrawReason =
   'choice' | 'penalty' | 'challenge' | 'uno' | 'timeout';
@@ -361,6 +373,8 @@ export interface UnoClientAckData {
   'uno:sync': UnoSnapshot;
   'uno:leave': null;
   'uno:ready': null;
+  'uno:add_bot': null;
+  'uno:remove_bot': null;
   'uno:start': null;
   'uno:rematch': null;
   'uno:play_card': null;

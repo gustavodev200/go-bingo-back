@@ -357,3 +357,43 @@ describe('DamasRoomsService', () => {
     expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
   });
 });
+
+describe('DamasRoomsService — CPU', () => {
+  const THINK = 1_100;
+
+  it('plays a whole game against the CPU, settled as a CPU match', () => {
+    const { service, state, timer, arena } = setup();
+    service.create(ana, 's0', true);
+    service.addBot(ana.userId);
+    expect(state().seats[1]).toMatchObject({ bot: true, ready: true });
+    service.setReady(ana.userId, true);
+    service.start(ana.userId);
+
+    for (let step = 0; step < 600 && state().phase === 'PLAYING'; step++) {
+      const s = state();
+      const mine = s.game!.turn === (s.whiteSeat === 0 ? 'white' : 'black');
+      if (mine) {
+        const m = firstMove(s);
+        service.move(ana.userId, m.from, m.path);
+      } else timer.fire(THINK);
+    }
+    expect(state().phase).toBe('FINISHED');
+    if (state().result!.winner !== null)
+      expect(arena.settleSafe).toHaveBeenCalledWith(
+        expect.objectContaining({
+          game: 'DAMAS',
+          cpuPlayers: 1,
+          participants: [expect.objectContaining({ userId: ana.userId })],
+        }),
+      );
+  });
+
+  it('the host can take the CPU back out of the lobby', () => {
+    const { service, state, timer } = setup();
+    service.create(ana, 's0', true);
+    service.addBot(ana.userId);
+    service.removeBot(ana.userId, 1);
+    expect(state().seats[1]).toBeNull();
+    expect(timer.pending).toHaveLength(0);
+  });
+});

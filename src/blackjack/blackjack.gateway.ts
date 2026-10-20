@@ -24,6 +24,7 @@ import {
   bjInsuranceSchema,
   bjSetRulesSchema,
   bjReadySchema,
+  bjRemoveBotSchema,
   bjVisibilitySchema,
   userChannel,
   setStakeSchema,
@@ -252,6 +253,31 @@ export class BjGateway
       body,
       (user, { ready }) => {
         this.tables.setReady(user.id, ready);
+        return Promise.resolve(null);
+      },
+    );
+  }
+
+  @SubscribeMessage(BjClientEvents.ADD_BOT)
+  onAddBot(@ConnectedSocket() socket: BjSocket, @MessageBody() body: unknown) {
+    return this.handle(socket, 'default', bjEmptySchema, body, (user) => {
+      this.tables.addBot(user.id);
+      return Promise.resolve(null);
+    });
+  }
+
+  @SubscribeMessage(BjClientEvents.REMOVE_BOT)
+  onRemoveBot(
+    @ConnectedSocket() socket: BjSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      bjRemoveBotSchema,
+      body,
+      (user, { seat }) => {
+        this.tables.removeBot(user.id, seat);
         return Promise.resolve(null);
       },
     );

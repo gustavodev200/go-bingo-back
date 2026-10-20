@@ -433,3 +433,72 @@ describe('UnoRoomsService — table stake', () => {
     );
   });
 });
+
+describe('UnoRoomsService — CPU', () => {
+  const THINK = 1_100;
+
+  function withBots(bots: number) {
+    const ctx = setup();
+    const code = ctx.service.create(ana, 's0', true).state.code;
+    for (let i = 0; i < bots; i++) ctx.service.addBot(ana.userId);
+    return { ...ctx, code };
+  }
+
+  it('only the host seats or removes a CPU, which is always ready', () => {
+    const { service, state, code } = withBots(1);
+    service.join(code, bia, 's-u1');
+    expect(state().seats[1]).toMatchObject({
+      bot: true,
+      ready: true,
+      nickname: 'CPU 1',
+    });
+    expect(codeOf(() => service.addBot(bia.userId))).toBe('NOT_HOST');
+    expect(codeOf(() => service.removeBot(ana.userId, 2))).toBe(
+      'INVALID_STATE',
+    );
+    service.removeBot(ana.userId, 1);
+    expect(state().seats[1]).toBeNull();
+  });
+
+  it('a lone player against CPUs plays a whole match, settled as a CPU match', () => {
+    const { service, state, timer, publisher, arena } = withBots(2);
+    expect(service.stakeCheck(ana.userId).userIds).toEqual([]);
+    service.setReady(ana.userId, true);
+    service.start(ana.userId);
+
+    for (let step = 0; step < 3000 && state().phase === 'PLAYING'; step++) {
+      const round = state().round!;
+      if (round.phase === 'ROUND_OVER') timer.fire(PAUSE);
+      else if (round.turn !== 0) timer.fire(THINK);
+      else {
+        const hand = publisher.last('uno:private_hand', 'user:u0');
+        if (hand.drawnCardId) service.pass(ana.userId);
+        else if (hand.playable.length > 0) {
+          const id = hand.playable[0];
+          const card = hand.cards.find((c) => c.id === id)!.card;
+          service.playCard(ana.userId, id, {
+            color: card.color === 'wild' ? 'red' : undefined,
+          });
+        } else service.draw(ana.userId);
+      }
+    }
+    expect(state().phase).toBe('FINISHED');
+    expect(publisher.count('uno:private_hand', 'user:cpu:1')).toBe(0);
+    expect(arena.settleSafe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        game: 'UNO',
+        cpuPlayers: 2,
+        participants: [
+          expect.objectContaining({ userId: ana.userId, abandoned: false }),
+        ],
+      }),
+    );
+  });
+
+  it('closes the table when the last human leaves, CPUs do not keep it open', () => {
+    const { service, timer } = withBots(2);
+    service.leave(ana.userId);
+    expect(service.roomOf(ana.userId)).toBeUndefined();
+    expect(timer.pending).toHaveLength(0);
+  });
+});

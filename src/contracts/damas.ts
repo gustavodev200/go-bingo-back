@@ -92,6 +92,8 @@ export interface DamasSeatPlayer {
   userId: string;
   nickname: string;
   character: string | null;
+  /** CPU chamada pelo anfitrião (id sintético `cpu:N`). */
+  bot: boolean;
   ready: boolean;
   connected: boolean;
   /** Epoch ms when the reserved seat is released; null while connected. */
@@ -203,6 +205,9 @@ export const DamasClientEvents = {
   SYNC: 'damas:sync',
   LEAVE: 'damas:leave',
   READY: 'damas:ready',
+  /** Host only, lobby only: a CPU takes the first free seat. */
+  ADD_BOT: 'damas:add_bot',
+  REMOVE_BOT: 'damas:remove_bot',
   START: 'damas:start',
   REMATCH: 'damas:rematch',
   MOVE: 'damas:move',
@@ -244,6 +249,13 @@ export const damasVisibilitySchema = z.object({ isPublic: z.boolean() });
 export const damasSetRulesSchema = z.object({ rules: damasRulesSchema });
 export const damasJoinSchema = z.object({ code: roomCodeSchema });
 export const damasReadySchema = z.object({ ready: z.boolean() });
+export const damasRemoveBotSchema = z.object({
+  seat: z
+    .number()
+    .int()
+    .min(0)
+    .max(DAMAS_SEATS - 1),
+});
 export const damasActionSchema = z.object({ actionId: actionIdSchema });
 export const damasMoveSchema = z.object({
   actionId: actionIdSchema,
@@ -257,7 +269,7 @@ export const damasAnswerDrawSchema = z.object({
 });
 export const damasEmoteSchema = z.object({ emote: z.enum(DAMAS_EMOTES) });
 
-export type DamasLeftReason = 'left' | 'expired';
+export type DamasLeftReason = 'left' | 'expired' | 'removed';
 
 /** Every announcement carries a room-wide sequence number so clients can drop duplicates. */
 export interface DamasServerEventPayloads {
@@ -298,6 +310,8 @@ export interface DamasClientAckData {
   'damas:sync': DamasSnapshot;
   'damas:leave': null;
   'damas:ready': null;
+  'damas:add_bot': null;
+  'damas:remove_bot': null;
   'damas:start': null;
   'damas:rematch': null;
   'damas:move': null;

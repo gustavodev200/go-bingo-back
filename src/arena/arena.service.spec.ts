@@ -381,3 +381,93 @@ describe('ArenaService.latest', () => {
     await expect(service.latest(A)).resolves.toBeNull();
   });
 });
+
+describe('ArenaService.settle against the CPU', () => {
+  const cpuInput = {
+    matchId: MATCH,
+    game: 'UNO' as const,
+    durationMs: 5 * 60_000,
+    cpuPlayers: 2,
+    participants: [{ userId: A, placement: 1 }],
+  };
+
+  it('pays the fixed win reward, charges nothing and leaves the ranking alone', async () => {
+    const prisma = makePrisma();
+    prisma.profile.findMany.mockResolvedValue([profile(A)]);
+    const service = new ArenaService(prisma as unknown as PrismaService);
+
+    const results = await service.settle(cpuInput);
+
+    expect(results!.get(A)).toMatchObject({
+      won: true,
+      rated: false,
+      vsCpu: true,
+      players: 3,
+      pointsDelta: 0,
+      staked: 0,
+      prize: 0,
+      coinsDelta: 10,
+      bonuses: [{ code: 'CPU', amount: 10 }],
+    });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(prisma.coinTransaction.create).toHaveBeenCalledWith({
+      data: { userId: A, amount: 10, reason: 'BONUS', gameId: MATCH },
+    });
+    expect(prisma.matchResult.createMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('pays 5 for losing, nothing to guests, leavers or a match that was too short', async () => {
+    const prisma = makePrisma();
+    const C = '00000000-0000-4000-8000-00000000000c';
+    prisma.profile.findMany.mockResolvedValue([
+      profile(A),
+      profile(B, { isGuest: true }),
+      profile(C),
+    ]);
+    const service = new ArenaService(prisma as unknown as PrismaService);
+
+    const results = await service.settle({
+      ...cpuInput,
+      participants: [
+        { userId: A, placement: 2 },
+        { userId: B, placement: 3 },
+        { userId: C, placement: 4, abandoned: true },
+      ],
+    });
+    expect(results!.get(A)!.coinsDelta).toBe(5);
+    expect(results!.get(B)!.coinsDelta).toBe(0);
+    expect(results!.get(C)!.coinsDelta).toBe(0);
+
+    const short = await new ArenaService(
+      makePrismaWith([profile(A)]) as unknown as PrismaService,
+    ).settle({ ...cpuInput, durationMs: 10_000 });
+    expect(short!.get(A)!.coinsDelta).toBe(0);
+  });
+
+  it('stops paying after the daily cap of CPU matches', async () => {
+    const prisma = makePrismaWith([profile(A)]);
+    prisma.matchResult.findMany.mockResolvedValue(
+      Array.from({ length: 30 }, () => ({ userId: A })),
+    );
+    const service = new ArenaService(prisma as unknown as PrismaService);
+
+    const results = await service.settle(cpuInput);
+    expect(results!.get(A)!.coinsDelta).toBe(0);
+    expect(prisma.coinTransaction.create).not.toHaveBeenCalled();
+  });
+
+  it('does nothing without a known human', async () => {
+    const prisma = makePrismaWith([]);
+    const service = new ArenaService(prisma as unknown as PrismaService);
+    await expect(service.settle(cpuInput)).resolves.toBeNull();
+    await expect(
+      service.settle({ ...cpuInput, participants: [] }),
+    ).resolves.toBeNull();
+  });
+});
+
+function makePrismaWith(profiles: unknown[]) {
+  const prisma = makePrisma();
+  prisma.profile.findMany.mockResolvedValue(profiles);
+  return prisma;
+}

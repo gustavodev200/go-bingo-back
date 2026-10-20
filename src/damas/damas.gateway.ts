@@ -24,6 +24,7 @@ import {
   damasAnswerDrawSchema,
   damasSetRulesSchema,
   damasReadySchema,
+  damasRemoveBotSchema,
   damasVisibilitySchema,
   userChannel,
   setStakeSchema,
@@ -261,6 +262,34 @@ export class DamasGateway
       body,
       (user, { ready }) => {
         this.tables.setReady(user.id, ready);
+        return Promise.resolve(null);
+      },
+    );
+  }
+
+  @SubscribeMessage(DamasClientEvents.ADD_BOT)
+  onAddBot(
+    @ConnectedSocket() socket: DamasSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(socket, 'default', damasEmptySchema, body, (user) => {
+      this.tables.addBot(user.id);
+      return Promise.resolve(null);
+    });
+  }
+
+  @SubscribeMessage(DamasClientEvents.REMOVE_BOT)
+  onRemoveBot(
+    @ConnectedSocket() socket: DamasSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      damasRemoveBotSchema,
+      body,
+      (user, { seat }) => {
+        this.tables.removeBot(user.id, seat);
         return Promise.resolve(null);
       },
     );

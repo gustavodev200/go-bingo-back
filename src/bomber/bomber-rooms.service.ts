@@ -73,7 +73,7 @@ interface Room {
   /** Last frame sent, replayed (without events) to whoever reconnects. */
   lastFrame: BomberFrame | null;
   result: BomberMatchResult | null;
-  /** Só humanos: CPU não entra na Arena (não dá para farmar contra bot). */
+  /** Só humanos; com CPU na mesa a Arena liquida como partida contra a CPU (sem ranking). */
   tracker: MatchTracker | null;
   seq: number;
   version: number;
@@ -252,6 +252,8 @@ export class BomberRoomsService implements OnModuleDestroy {
   /** Quem aposta se a partida começar agora: os humanos sentados (sozinho contra CPU não vale nada). */
   stakeCheck(userId: string): { stake: number; userIds: string[] } {
     const room = this.requireRoom(userId);
+    if (room.seats.some((s) => s?.bot))
+      return { stake: room.stake, userIds: [] };
     const userIds = room.seats.flatMap((s) => (s && !s.bot ? [s.userId] : []));
     return { stake: room.stake, userIds: userIds.length >= 2 ? userIds : [] };
   }
@@ -385,6 +387,7 @@ export class BomberRoomsService implements OnModuleDestroy {
         s && !s.bot ? [{ seat: i, userId: s.userId }] : [],
       ),
       this.now(),
+      room.seats.filter((s) => s?.bot).length,
     );
     this.startRound(room, [{ event: 'bomber:match_started', payload: {} }]);
   }
@@ -512,6 +515,7 @@ export class BomberRoomsService implements OnModuleDestroy {
       stake: room.stake,
       durationMs: tracker.durationMs(this.now()),
       participants: tracker.participants(placeOf),
+      cpuPlayers: tracker.cpuPlayers,
     });
   }
 
