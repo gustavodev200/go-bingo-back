@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
-  VOICE_MAX_PEERS,
   voiceChannel,
+  voiceMaxPeers,
   type VoiceGame,
   type VoicePeer,
 } from '../contracts';
@@ -47,7 +47,7 @@ export class VoiceChannelsService {
     const previous = [...(members?.values() ?? [])].find(
       (m) => m.peer.userId === peer.userId,
     );
-    if (!previous && (members?.size ?? 0) >= VOICE_MAX_PEERS)
+    if (!previous && (members?.size ?? 0) >= voiceMaxPeers(game))
       throw new DomainError('ROOM_FULL', 'O canal de voz está cheio');
 
     const left = current ? this.leave(peer.peerId) : null;

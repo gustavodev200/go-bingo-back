@@ -211,9 +211,11 @@ export class VoiceGateway
     );
   }
 
-  /** Drops from voice whoever is no longer in the game room. */
-  async sweep(): Promise<void> {
+  /** Drops from voice whoever is no longer in the game room (or, with `only`, in that room right now). */
+  async sweep(only?: { game: VoiceGame; code: string }): Promise<void> {
     for (const member of this.channels.members()) {
+      if (only && (member.game !== only.game || member.code !== only.code))
+        continue;
       try {
         const still = await this.membership.isMember(
           member.game,
