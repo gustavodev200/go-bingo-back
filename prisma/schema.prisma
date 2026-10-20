@@ -47,6 +47,7 @@ enum ArenaGame {
   DOMINO
   SNAKE
   BOMBER
+  INFILTRADO
 }
 
 /// RLS ligada por migration (enable_rls); novas tabelas precisam do mesmo ALTER na migration que as cria.

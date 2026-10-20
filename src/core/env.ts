@@ -111,6 +111,15 @@ const envSchema = z.object({
     .default(3_500),
   // Bomberman: rooms kept in memory at most (each runs a 30 Hz loop while playing).
   BOMBER_MAX_ROOMS: z.coerce.number().int().min(1).default(300),
+  // Infiltrado: how long a disconnected player's seat stays reserved.
+  INF_RECONNECT_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(600_000)
+    .default(45_000),
+  // Infiltrado: rooms kept in memory at most (each runs a 20 Hz loop while playing).
+  INF_MAX_ROOMS: z.coerce.number().int().min(1).default(200),
   // Snake.io: how long a disconnected player keeps the place in the room.
   SNAKE_RECONNECT_GRACE_MS: z.coerce
     .number()

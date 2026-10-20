@@ -12,6 +12,7 @@ import { BomberModule } from './bomber/bomber.module';
 import { CoreModule } from './core/core.module';
 import { DominoModule } from './domino/domino.module';
 import { HttpThrottlerGuard } from './core/http-throttler.guard';
+import { InfiltradoModule } from './infiltrado/infiltrado.module';
 import { GameModule } from './game/game.module';
 import { GuestsModule } from './guests/guests.module';
 import { HealthController } from './health/health.controller';
@@ -39,6 +40,7 @@ import { VoiceModule } from './voice/voice.module';
     DominoModule,
     BomberModule,
     SnakeModule,
+    InfiltradoModule,
     VoiceModule,
   ],
   controllers: [HealthController],
