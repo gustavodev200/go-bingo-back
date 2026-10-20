@@ -1,5 +1,6 @@
 export * from './arena';
 export * from './bingo';
+export * from './blackjack';
 export * from './bomber';
 export * from './coins';
 export * from './damas';

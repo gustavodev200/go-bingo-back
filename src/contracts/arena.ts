@@ -20,6 +20,7 @@ export const ARENA_GAMES = [
   'BOMBER',
   'INFILTRADO',
   'DAMAS',
+  'BLACKJACK',
 ] as const;
 export type ArenaGame = (typeof ARENA_GAMES)[number];
 
@@ -32,6 +33,7 @@ export const ARENA_GAME_LABELS: Record<ArenaGame, string> = {
   BOMBER: 'Bomber',
   INFILTRADO: 'Infiltrado',
   DAMAS: 'Damas',
+  BLACKJACK: 'Blackjack',
 };
 
 export interface ArenaRules {
@@ -114,6 +116,15 @@ export const ARENA_RULES: Record<ArenaGame, ArenaRules> = {
     winBonus: 50,
     ratingWeight: 1,
     minRatedMs: 90_000,
+    finishBonus: 5,
+    countsStreak: true,
+  },
+  // Blackjack: torneio de fichas contra o dealer; as cartas pesam muito, a gestão da banca decide.
+  BLACKJACK: {
+    ante: 30,
+    winBonus: 40,
+    ratingWeight: 0.5,
+    minRatedMs: 60_000,
     finishBonus: 5,
     countsStreak: true,
   },

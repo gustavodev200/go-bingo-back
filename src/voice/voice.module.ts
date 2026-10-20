@@ -4,6 +4,8 @@
 import { Module } from '@nestjs/common';
 import { DEFAULT_VOICE_ICE_SERVERS } from '../contracts';
 import { ENV, type Env } from '../core/env';
+import { BjRoomsService } from '../blackjack/blackjack-rooms.service';
+import { BjModule } from '../blackjack/blackjack.module';
 import { DamasRoomsService } from '../damas/damas-rooms.service';
 import { DamasModule } from '../damas/damas.module';
 import { DominoRoomsService } from '../domino/domino-rooms.service';
@@ -34,6 +36,7 @@ import {
     UnoModule,
     DominoModule,
     DamasModule,
+    BjModule,
     InfiltradoModule,
   ],
   providers: [
@@ -54,6 +57,7 @@ import {
         UnoRoomsService,
         DominoRoomsService,
         DamasRoomsService,
+        BjRoomsService,
         InfRoomsService,
       ],
       useFactory: (
@@ -62,6 +66,7 @@ import {
         uno: UnoRoomsService,
         domino: DominoRoomsService,
         damas: DamasRoomsService,
+        blackjack: BjRoomsService,
         inf: InfRoomsService,
       ): VoiceMembership => ({
         isMember: (game, code, userId) => {
@@ -75,6 +80,8 @@ import {
             return Promise.resolve(domino.roomOf(userId) === code);
           if (game === 'damas')
             return Promise.resolve(damas.roomOf(userId) === code);
+          if (game === 'blackjack')
+            return Promise.resolve(blackjack.roomOf(userId) === code);
           return bingo.isMember(code, userId);
         },
       }),
