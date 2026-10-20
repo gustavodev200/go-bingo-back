@@ -19,6 +19,7 @@ export const ARENA_GAMES = [
   'SNAKE',
   'BOMBER',
   'INFILTRADO',
+  'DAMAS',
 ] as const;
 export type ArenaGame = (typeof ARENA_GAMES)[number];
 
@@ -30,6 +31,7 @@ export const ARENA_GAME_LABELS: Record<ArenaGame, string> = {
   SNAKE: 'Snake.io',
   BOMBER: 'Bomber',
   INFILTRADO: 'Infiltrado',
+  DAMAS: 'Damas',
 };
 
 export interface ArenaRules {
@@ -103,6 +105,15 @@ export const ARENA_RULES: Record<ArenaGame, ArenaRules> = {
     winBonus: 40,
     ratingWeight: 0.7,
     minRatedMs: 120_000,
+    finishBonus: 5,
+    countsStreak: true,
+  },
+  // Damas: duelo de pura habilidade (informação completa, sem sorte).
+  DAMAS: {
+    ante: 30,
+    winBonus: 50,
+    ratingWeight: 1,
+    minRatedMs: 90_000,
     finishBonus: 5,
     countsStreak: true,
   },

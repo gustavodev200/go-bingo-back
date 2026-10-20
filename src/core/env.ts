@@ -95,6 +95,15 @@ const envSchema = z.object({
     .default(5_000),
   // Dominó: tables kept in memory at most (one per player).
   DOMINO_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
+  // Damas: how long a disconnected player's seat stays reserved.
+  DAMAS_RECONNECT_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(600_000)
+    .default(60_000),
+  // Damas: tables kept in memory at most (one per player).
+  DAMAS_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
   // Bomberman: how long a disconnected player's seat stays reserved.
   BOMBER_RECONNECT_GRACE_MS: z.coerce
     .number()
