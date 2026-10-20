@@ -15,6 +15,7 @@ import { DominoModule } from './domino/domino.module';
 import { HttpThrottlerGuard } from './core/http-throttler.guard';
 import { InfiltradoModule } from './infiltrado/infiltrado.module';
 import { DamasModule } from './damas/damas.module';
+import { BjModule } from './blackjack/blackjack.module';
 import { GameModule } from './game/game.module';
 import { GuestsModule } from './guests/guests.module';
 import { HealthController } from './health/health.controller';
@@ -45,6 +46,7 @@ import { VoiceModule } from './voice/voice.module';
     SnakeModule,
     InfiltradoModule,
     DamasModule,
+    BjModule,
     VoiceModule,
   ],
   controllers: [HealthController],
