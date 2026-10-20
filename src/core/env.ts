@@ -113,6 +113,15 @@ const envSchema = z.object({
     .default(60_000),
   // Blackjack: tables kept in memory at most (one per player).
   BLACKJACK_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
+  // Tacada: how long a disconnected player's seat stays reserved.
+  TACADA_RECONNECT_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(600_000)
+    .default(60_000),
+  // Tacada: tables kept in memory at most (one per player).
+  TACADA_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
   // Bomberman: how long a disconnected player's seat stays reserved.
   BOMBER_RECONNECT_GRACE_MS: z.coerce
     .number()

@@ -10,6 +10,8 @@ export * from './infiltrado';
 export * from './profile';
 export * from './room';
 export * from './snake';
+export * from './tacada';
+export * from './tacada-physics';
 export * from './errors';
 export * from './events';
 export * from './http';
