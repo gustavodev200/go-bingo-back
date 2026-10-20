@@ -47,6 +47,19 @@ export class GameRunner implements OnApplicationBootstrap, OnModuleDestroy {
   async tick(gameId: string, code: string, intervalMs: number): Promise<void> {
     this.timers.delete(gameId);
     try {
+      const cpu = await this.games.cpuBingo(gameId);
+      if (cpu) {
+        this.logger.log({
+          event: 'bingo_won',
+          roomCode: code,
+          gameId,
+          userId: cpu.userId,
+          cpu: true,
+        });
+        this.publisher.toRoom(code, ServerEvents.GAME_WON, cpu);
+        this.publisher.publicRoomsChanged();
+        return;
+      }
       const result = await this.games.drawNext(gameId);
       if (result.kind === 'drawn') {
         this.publisher.toRoom(code, ServerEvents.NUMBER_DRAWN, result.draw);

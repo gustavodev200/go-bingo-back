@@ -659,3 +659,70 @@ describe('TrucoRoomsService — betting votes', () => {
     });
   });
 });
+
+describe('TrucoRoomsService — CPU', () => {
+  const THINK = 1_100;
+
+  it('only the host seats or removes a CPU, which is always ready', () => {
+    const t = setup();
+    const { code } = t.service.create(ana, 's-ana').state;
+    t.service.join(code, bia, 's-Bia');
+    t.service.addBot(ana.userId);
+    expect(state(t).seats[2]).toMatchObject({ bot: true, ready: true });
+    expect(errorCode(() => t.service.addBot(bia.userId))).toBe('NOT_HOST');
+    t.service.removeBot(ana.userId, 2);
+    expect(state(t).seats[2]).toBeNull();
+  });
+
+  it('the host picks the seat of the CPU (partner or opponent)', () => {
+    const t = setup();
+    t.service.create(ana, 's-ana');
+    t.service.addBot(ana.userId, 2);
+    expect(state(t).seats[2]).toMatchObject({ bot: true });
+    expect(state(t).seats[1]).toBeNull();
+    expect(errorCode(() => t.service.addBot(ana.userId, 2))).toBe('ROOM_FULL');
+  });
+
+  it('a lone player with three CPUs plays a whole match, settled as a CPU match', () => {
+    const t = setup();
+    t.service.create(ana, 's-ana');
+    for (let i = 0; i < 3; i++) t.service.addBot(ana.userId);
+    expect(t.service.stakeCheck(ana.userId).userIds).toEqual([]);
+    t.service.setReady(ana.userId, true);
+    t.service.start(ana.userId);
+
+    for (let step = 0; step < 5000 && state(t).phase === 'PLAYING'; step++) {
+      const m = state(t).match!;
+      const hand = t.service.sync(ana.userId).hand!;
+      if (m.phase === 'HAND_OVER') t.timer.fire(PAUSE);
+      else if (m.phase === 'AWAITING_TEN_DECISION' && m.tenTeam === 0)
+        t.service.decideTen(ana.userId, true);
+      else if (
+        m.phase === 'AWAITING_BET_RESPONSE' &&
+        m.pendingBet!.team === 1 &&
+        !hand.betVotes?.mine
+      )
+        t.service.respondBet(ana.userId, 'accept');
+      else if (m.phase === 'AWAITING_PLAY' && m.turn === 0)
+        t.service.playCard(ana.userId, hand.cards[0].id);
+      else t.timer.fire(THINK);
+    }
+    expect(state(t).phase).toBe('FINISHED');
+    expect(t.arena.settleSafe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        game: 'TRUCO',
+        cpuPlayers: 3,
+        participants: [expect.objectContaining({ userId: ana.userId })],
+      }),
+    );
+  });
+
+  it('closes the table when the last human leaves', () => {
+    const t = setup();
+    t.service.create(ana, 's-ana');
+    t.service.addBot(ana.userId);
+    t.service.leave(ana.userId);
+    expect(t.service.roomOf(ana.userId)).toBeUndefined();
+    expect(t.timer.pending).toHaveLength(0);
+  });
+});

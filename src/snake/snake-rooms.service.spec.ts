@@ -2,6 +2,7 @@ import type { ArenaService } from '../arena/arena.service';
 import {
   SNAKE_MAX_PLAYERS,
   SNAKE_TICK_MS,
+  SNAKE_CPU_FILL,
   SNAKE_TICK_RATE,
   decodeSnakeFrame,
   type SnakePublicRoom,
@@ -93,7 +94,7 @@ function setup(config: Partial<SnakeConfig> = {}) {
   const timer = new FakeTimer();
   const arena = { settleSafe: jest.fn().mockResolvedValue(null) };
   const service = new SnakeRoomsService(
-    { reconnectGraceMs: GRACE_MS, maxRooms: 5, ...config },
+    { reconnectGraceMs: GRACE_MS, maxRooms: 5, cpuFill: 0, ...config },
     publisher,
     random,
     timer,
@@ -158,9 +159,6 @@ describe('SnakeRoomsService', () => {
   it('plays, steers, ranks and tells the player how it died', () => {
     const { service, publisher, timer } = setup();
     const code = service.create(ANA, 's1').state.code;
-    expect(() => service.play(ANA.userId, 4)).toThrow(
-      'Precisa de pelo menos 2 jogadores',
-    );
     service.join(code, BIA, 's2');
     const { id } = service.play(ANA.userId, 4);
     expect(service.play(ANA.userId, 4).id).toBe(id);
@@ -241,7 +239,7 @@ describe('SnakeRoomsService', () => {
     expect(arena.settleSafe).not.toHaveBeenCalled();
   });
 
-  it('only connected players count for the minimum; a live snake keeps going alone', () => {
+  it('a live snake keeps going alone; one player alone can play too', () => {
     const { service } = setup();
     const code = service.create(ANA, 's1').state.code;
     service.join(code, BIA, 's2');
@@ -249,10 +247,10 @@ describe('SnakeRoomsService', () => {
     service.disconnect(BIA.userId, 's2');
     // already alive: keeps its snake
     expect(service.play(ANA.userId, 0).id).toBeGreaterThan(0);
-    // Bia comes back to an empty-ish room where only she is online: cannot spawn
+    // Bia comes back to a room where only she is online: CPU snakes keep her company
     service.leave(ANA.userId);
     service.join(code, BIA, 's2b');
-    expect(() => service.play(BIA.userId, 0)).toThrow(DomainError);
+    expect(service.play(BIA.userId, 0).id).toBeGreaterThan(0);
   });
 
   it('ignores input and view from users outside rooms; play requires a room', () => {
@@ -325,5 +323,37 @@ describe('SnakeRoomsService', () => {
     service.disconnect(ANA.userId, 's1');
     service.onModuleDestroy();
     expect(timer.pending.size).toBe(0);
+  });
+});
+
+describe('SnakeRoomsService — CPU', () => {
+  it('fills the arena with CPU snakes while few people are online, and they move on their own', () => {
+    const { service, publisher, timer } = setup({ cpuFill: SNAKE_CPU_FILL });
+    service.create(ANA, 's1');
+    service.play(ANA.userId, 0);
+    timer.tick(SNAKE_TICK_RATE * (SNAKE_CPU_FILL + 1));
+    const metas = publisher
+      .of('snake:meta')
+      .flatMap((m) => (m.payload as { meta: [number, string, number][] }).meta);
+    const bots = metas.filter(([, name]) => name.startsWith('CPU '));
+    // (a CPU that crashed is replaced, so there may be more spawns than places)
+    expect(bots.length).toBeGreaterThanOrEqual(SNAKE_CPU_FILL - 1);
+    const board = publisher.of('snake:leaderboard', 's1').at(-1)!.payload as {
+      total: number;
+    };
+    expect(board.total).toBeGreaterThanOrEqual(SNAKE_CPU_FILL - 1);
+    // CPU snakes are not people: they take no place in the room
+    expect(publisher.lastState().players).toHaveLength(1);
+  });
+
+  it('nobody online: no CPU is spawned', () => {
+    const { service, publisher, timer } = setup({ cpuFill: SNAKE_CPU_FILL });
+    service.create(ANA, 's1');
+    service.disconnect(ANA.userId, 's1');
+    timer.tick(SNAKE_TICK_RATE * 3);
+    const metas = publisher
+      .of('snake:meta')
+      .flatMap((m) => (m.payload as { meta: [number, string, number][] }).meta);
+    expect(metas.filter(([, name]) => name.startsWith('CPU '))).toHaveLength(0);
   });
 });

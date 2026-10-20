@@ -1,3 +1,4 @@
+import { canPlaceCue } from '../contracts';
 import type { ArenaService } from '../arena/arena.service';
 import type {
   TacadaPublicRoom,
@@ -427,5 +428,83 @@ describe('TacadaRoomsService', () => {
       return typeof seq === 'number' ? [seq] : [];
     });
     expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+  });
+});
+
+describe('TacadaRoomsService — CPU', () => {
+  it('plays a whole game against the CPU, settled as a CPU match', () => {
+    let clock = NOW;
+    const t = setup({ now: () => clock });
+    t.service.create(ana, 's0');
+    t.service.addBot(ana.userId);
+    expect(t.state().seats[1]).toMatchObject({ bot: true, ready: true });
+    t.service.setReady(ana.userId, true);
+    t.service.start(ana.userId);
+
+    let cpuShots = 0;
+    for (let i = 0; i < 400 && t.state().phase === 'PLAYING'; i++) {
+      clock += 60_000;
+      const game = t.state().game!;
+      if (game.turn === 1) {
+        const bot = t.timer.pending
+          .filter((p) => p.ms < SHOT && p.ms !== GRACE)
+          .sort((a, b) => a.ms - b.ms)[0];
+        expect(bot).toBeDefined();
+        t.timer.fire(bot.ms);
+        cpuShots++;
+        continue;
+      }
+      if (game.breakShot) {
+        t.service.shoot(ana.userId, BREAK);
+        continue;
+      }
+      const balls = game.balls;
+      const target = balls.findIndex((b, n) => n > 0 && n !== 8 && b);
+      const aimAt = balls[target >= 0 ? target : 8]!;
+      let cue = balls[0] ?? ([45, 50] as const);
+      const input: Record<string, number> = {};
+      if (game.ballInHand) {
+        cue = [20, 8];
+        for (let y = 8; y < 95; y += 6)
+          if (canPlaceCue(balls, 20, y, false)) {
+            cue = [20, y];
+            break;
+          }
+        input.cueX = cue[0];
+        input.cueY = cue[1];
+      }
+      t.service.shoot(ana.userId, {
+        dirX: aimAt[0] - cue[0],
+        dirY: aimAt[1] - cue[1],
+        power: 0.5,
+        spinX: 0,
+        spinY: 0,
+        pocket: 0,
+        ...input,
+      });
+    }
+    expect(t.state().phase).toBe('FINISHED');
+    expect(cpuShots).toBeGreaterThan(0);
+    expect(t.arena.settleSafe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        game: 'TACADA',
+        cpuPlayers: 1,
+        participants: [expect.objectContaining({ userId: ana.userId })],
+      }),
+    );
+  });
+
+  it('only the host handles the CPU; the table closes with the last human', () => {
+    const t = setup();
+    const code = t.service.create(ana, 's0').state.code;
+    t.service.join(code, bia, 's1');
+    expect(() => t.service.addBot(bia.userId)).toThrow();
+    t.service.leave(bia.userId);
+    t.service.addBot(ana.userId);
+    t.service.removeBot(ana.userId, 1);
+    t.service.addBot(ana.userId);
+    t.service.leave(ana.userId);
+    expect(t.service.roomOf(ana.userId)).toBeUndefined();
+    expect(t.timer.pending).toHaveLength(0);
   });
 });

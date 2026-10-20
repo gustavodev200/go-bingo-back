@@ -372,3 +372,66 @@ describe('GaudRoomsService — partida', () => {
     t.service.onModuleDestroy();
   });
 });
+
+describe('GaudRoomsService — CPU', () => {
+  const THINK = 1_100;
+
+  function playOut(t: T, cpus: number) {
+    for (let step = 0; step < 6000 && state(t).phase === 'PLAYING'; step++) {
+      const m = state(t).match!;
+      const hand = t.service.sync(ana.userId).hand!;
+      const a = hand.actions;
+      if (m.phase === 'HAND_OVER') t.timer.fire(PAUSE);
+      else if (a.canAccept) t.service.respond(ana.userId, true);
+      else if (hand.flor && a.calls.includes('flor'))
+        t.service.call(ana.userId, 'flor');
+      else if (a.canPlay)
+        t.service.playCard(ana.userId, hand.cards[0].id, false);
+      else t.timer.fire(THINK);
+    }
+    expect(state(t).phase).toBe('FINISHED');
+    expect(t.arena.settleSafe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        game: 'GAUDERIO',
+        cpuPlayers: cpus,
+        participants: [expect.objectContaining({ userId: ana.userId })],
+      }),
+    );
+  }
+
+  it('mano a mano against the CPU', () => {
+    const t = setup();
+    t.service.create(ana, 's-ana');
+    t.service.addBot(ana.userId);
+    expect(errorCode(() => t.service.addBot(ana.userId))).toBe('ROOM_FULL');
+    expect(state(t).seats[1]).toMatchObject({ bot: true, ready: true });
+    t.service.setReady(ana.userId, true);
+    t.service.start(ana.userId);
+    playOut(t, 1);
+  });
+
+  it('a lone player with three CPUs in pairs', () => {
+    const t = setup();
+    t.service.create(ana, 's-ana');
+    t.service.setSettings(ana.userId, FOUR);
+    for (let i = 0; i < 3; i++) t.service.addBot(ana.userId);
+    t.service.setReady(ana.userId, true);
+    t.service.start(ana.userId);
+    playOut(t, 3);
+  });
+
+  it('only the host handles CPUs and the table closes with the last human', () => {
+    const t = setup();
+    const { code } = t.service.create(ana, 's-ana').state;
+    t.service.setSettings(ana.userId, FOUR);
+    t.service.join(code, bia, 's-bia');
+    expect(errorCode(() => t.service.addBot(bia.userId))).toBe('NOT_HOST');
+    t.service.addBot(ana.userId);
+    t.service.removeBot(ana.userId, 2);
+    t.service.addBot(ana.userId);
+    t.service.leave(bia.userId);
+    t.service.leave(ana.userId);
+    expect(t.service.roomOf(ana.userId)).toBeUndefined();
+    expect(t.timer.pending).toHaveLength(0);
+  });
+});

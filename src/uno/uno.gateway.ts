@@ -23,6 +23,7 @@ import {
   unoPlayCardSchema,
   unoSetRulesSchema,
   unoReadySchema,
+  unoRemoveBotSchema,
   unoVisibilitySchema,
   userChannel,
   setStakeSchema,
@@ -251,6 +252,31 @@ export class UnoGateway
       body,
       (user, { ready }) => {
         this.tables.setReady(user.id, ready);
+        return Promise.resolve(null);
+      },
+    );
+  }
+
+  @SubscribeMessage(UnoClientEvents.ADD_BOT)
+  onAddBot(@ConnectedSocket() socket: UnoSocket, @MessageBody() body: unknown) {
+    return this.handle(socket, 'default', unoEmptySchema, body, (user) => {
+      this.tables.addBot(user.id);
+      return Promise.resolve(null);
+    });
+  }
+
+  @SubscribeMessage(UnoClientEvents.REMOVE_BOT)
+  onRemoveBot(
+    @ConnectedSocket() socket: UnoSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      unoRemoveBotSchema,
+      body,
+      (user, { seat }) => {
+        this.tables.removeBot(user.id, seat);
         return Promise.resolve(null);
       },
     );

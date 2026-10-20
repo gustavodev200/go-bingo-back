@@ -18,11 +18,13 @@ import {
   type GaudSnapshot,
 } from '../contracts';
 import { ArenaService } from '../arena/arena.service';
+import { CPU_THINK_MS, cpuNickname, cpuUserId } from '../arena/cpu';
 import { MatchTracker } from '../arena/match-tracker';
 import { DomainError } from '../core/domain-error';
 import { RANDOM_INT, type RandomInt } from '../core/random';
 import { DRAW_TIMER, type DrawTimer } from '../game/draw-timer';
 import { generateRoomCode } from '../rooms/room-code';
+import { gaudBotAction, gaudBotFallback } from './engine/bot';
 import { GaudMatch, type Announcement } from './engine/match';
 import { GAUD_PUBLISHER, type GaudPublisher } from './gauderio-publisher';
 
@@ -46,6 +48,8 @@ export interface GaudPlayer {
 }
 
 interface SeatState extends GaudPlayer {
+  /** CPU: joga sozinha, nunca segura a mesa aberta e não entra na Arena. */
+  bot: boolean;
   ready: boolean;
   sockets: Set<string>;
   reconnectDeadline: number | null;
@@ -67,6 +71,9 @@ interface Room {
   seq: number;
   version: number;
   handTimer: unknown;
+  botCount: number;
+  /** Próxima ação de CPU agendada (decidida na hora em que dispara). */
+  botTimer: unknown;
 }
 
 /**
@@ -128,6 +135,8 @@ export class GaudRoomsService implements OnModuleDestroy {
       seq: 0,
       version: 0,
       handTimer: undefined,
+      botCount: 0,
+      botTimer: undefined,
     };
     room.seats[0] = this.newSeat(player, socketId);
     this.rooms.set(code, room);
@@ -223,8 +232,57 @@ export class GaudRoomsService implements OnModuleDestroy {
 
   stakeCheck(userId: string): { stake: number; userIds: string[] } {
     const room = this.requireRoom(userId);
+    if (room.seats.some((s) => s?.bot))
+      return { stake: room.stake, userIds: [] };
     const userIds = room.seats.flatMap((s) => (s ? [s.userId] : []));
     return { stake: room.stake, userIds: userIds.length >= 2 ? userIds : [] };
+  }
+
+  /** O anfitrião completa a mesa com uma CPU (sempre pronta). */
+  addBot(userId: string, seat?: GaudSeat): void {
+    const room = this.requireRoom(userId);
+    this.requirePhase(room, 'LOBBY');
+    if (room.hostId !== userId)
+      throw new DomainError('NOT_HOST', 'Só o anfitrião chama a CPU');
+    const free =
+      seat ??
+      room.seats.findIndex((s, i) => s === null && i < room.settings.size);
+    if (free < 0 || free >= room.settings.size || room.seats[free])
+      throw new DomainError('ROOM_FULL', 'Esse lugar não está vago');
+    room.botCount++;
+    room.seats[free] = {
+      userId: cpuUserId(room.botCount),
+      nickname: cpuNickname(room.seats.filter((s) => s?.bot).length),
+      character: null,
+      bot: true,
+      ready: true,
+      sockets: new Set(),
+      reconnectDeadline: null,
+      expiryTimer: undefined,
+    };
+    this.publish(room, [
+      {
+        event: 'gauderio:player_joined',
+        payload: { player: this.seatView(room, free as GaudSeat)! },
+      },
+    ]);
+  }
+
+  removeBot(userId: string, seat: GaudSeat): void {
+    const room = this.requireRoom(userId);
+    this.requirePhase(room, 'LOBBY');
+    if (room.hostId !== userId)
+      throw new DomainError('NOT_HOST', 'Só o anfitrião tira a CPU');
+    const bot = room.seats[seat];
+    if (!bot?.bot)
+      throw new DomainError('INVALID_STATE', 'Esse lugar não é da CPU');
+    room.seats[seat] = null;
+    this.publish(room, [
+      {
+        event: 'gauderio:player_left',
+        payload: { seat, userId: bot.userId, reason: 'removed' },
+      },
+    ]);
   }
 
   setVisibility(userId: string, isPublic: boolean): void {
@@ -325,13 +383,17 @@ export class GaudRoomsService implements OnModuleDestroy {
     room.phase = 'PLAYING';
     room.result = null;
     room.tracker = new MatchTracker(
-      seated.map((s) => ({ seat: room.seats.indexOf(s), userId: s.userId })),
+      seated
+        .filter((s) => !s.bot)
+        .map((s) => ({ seat: room.seats.indexOf(s), userId: s.userId })),
       this.now(),
+      seated.filter((s) => s.bot).length,
     );
     this.publish(room, [
       { event: 'gauderio:match_started', payload: {} },
       ...room.match.deal(),
     ]);
+    this.driveBots(room);
   }
 
   rematch(userId: string): void {
@@ -397,9 +459,35 @@ export class GaudRoomsService implements OnModuleDestroy {
         if (this.rooms.get(room.code) !== room || room.match !== match) return;
         if (room.phase !== 'PLAYING') return;
         this.publish(room, match.deal());
+        this.driveBots(room);
       }, this.config.handPauseMs);
     }
     this.publish(room, out);
+    this.driveBots(room);
+  }
+
+  /**
+   * Alguma CPU tem o que fazer (responder canto, cantar flor, jogar)? Agenda uma ação;
+   * ela é decidida na hora em que dispara, com a mesa como estiver então.
+   */
+  private driveBots(room: Room): void {
+    if (room.botTimer || room.phase !== 'PLAYING' || !room.match) return;
+    if (!room.seats.some((s) => s?.bot)) return;
+    const match = room.match;
+    room.botTimer = this.timer.set(() => {
+      room.botTimer = undefined;
+      if (this.rooms.get(room.code) !== room || room.match !== match) return;
+      if (room.phase !== 'PLAYING') return;
+      const isBot = (seat: GaudSeat) => room.seats[seat]?.bot ?? false;
+      const size = room.settings.size;
+      let out: Announcement[] | null;
+      try {
+        out = gaudBotAction(match, size, isBot, this.random);
+      } catch {
+        out = gaudBotFallback(match, size, isBot);
+      }
+      if (out) this.afterMatchChange(room, match, out);
+    }, CPU_THINK_MS);
   }
 
   /** Arena: o lado vencedor divide o pote. Uma vez por partida. */
@@ -415,6 +503,7 @@ export class GaudRoomsService implements OnModuleDestroy {
       participants: tracker.participants((seat) =>
         gaudTeamOf(seat) === winnerTeam ? 1 : 2,
       ),
+      cpuPlayers: tracker.cpuPlayers,
     });
   }
 
@@ -448,15 +537,17 @@ export class GaudRoomsService implements OnModuleDestroy {
       payload: { seat, userId, reason },
     });
 
-    if (room.seats.every((s) => s === null)) {
+    if (!room.seats.some((s) => s && !s.bot)) {
       this.clearTimers(room);
       this.rooms.delete(room.code);
       this.publisher.publicRoomsChanged(() => this.listPublic());
       return;
     }
     if (room.hostId === userId) {
-      const next = room.seats.find((s) => s && s.sockets.size > 0);
-      room.hostId = (next ?? room.seats.find((s) => s !== null)!).userId;
+      const humans = room.seats.filter((s): s is SeatState => !!s && !s.bot);
+      room.hostId = (
+        humans.find((s) => s.sockets.size > 0) ?? humans[0]
+      ).userId;
     }
     this.publish(room, out);
   }
@@ -484,7 +575,7 @@ export class GaudRoomsService implements OnModuleDestroy {
     );
     if (!room.match || room.phase === 'LOBBY') return;
     room.seats.forEach((s, seat) => {
-      const hand = s && room.match!.privateView(seat as GaudSeat);
+      const hand = s && !s.bot && room.match!.privateView(seat as GaudSeat);
       if (hand)
         this.publisher.toUser(s.userId, GaudServerEvents.PRIVATE_HAND, hand);
     });
@@ -526,6 +617,7 @@ export class GaudRoomsService implements OnModuleDestroy {
       userId: s.userId,
       nickname: s.nickname,
       character: s.character,
+      bot: s.bot,
       ready: s.ready,
       connected: s.reconnectDeadline === null,
       reconnectDeadline: s.reconnectDeadline,
@@ -547,6 +639,7 @@ export class GaudRoomsService implements OnModuleDestroy {
   private newSeat(player: GaudPlayer, socketId: string): SeatState {
     return {
       ...player,
+      bot: false,
       ready: false,
       sockets: new Set([socketId]),
       reconnectDeadline: null,
@@ -555,7 +648,7 @@ export class GaudRoomsService implements OnModuleDestroy {
   }
 
   private unready(room: Room): void {
-    for (const s of room.seats) if (s) s.ready = false;
+    for (const s of room.seats) if (s && !s.bot) s.ready = false;
   }
 
   private seatedCount(room: Room): number {
@@ -591,6 +684,7 @@ export class GaudRoomsService implements OnModuleDestroy {
 
   private clearTimers(room: Room): void {
     this.timer.clear(room.handTimer);
+    this.timer.clear(room.botTimer);
     for (const s of room.seats) if (s) this.timer.clear(s.expiryTimer);
   }
 }

@@ -1,6 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { chargeUpTo, credit, saoPauloDay } from '../coins/ledger';
 import {
+  CPU_DAILY_CAP,
+  CPU_MIN_MS,
+  CPU_PLAY_COINS,
+  CPU_WIN_COINS,
+  isCpuId,
   PAIR_WINDOW_MS,
   stakeLevel,
   TIERS,
@@ -21,6 +26,7 @@ import {
   type PlanEntry,
 } from './settlement';
 import { checkStake } from './stake-guard';
+import { dayStart } from './week';
 
 export interface MatchParticipant {
   userId: string;
@@ -41,6 +47,11 @@ export interface MatchInput {
   skipGamesPlayed?: boolean;
   /** Aposta da mesa; ausente = mínimo do jogo. Mesas altas pagam taxa da casa sobre o pote. */
   stake?: number;
+  /**
+   * Quantas CPUs jogaram. > 0 = partida contra a CPU: sem ranking, sem entrada/aposta, só o agrado
+   * fixo (CPU_WIN_COINS / CPU_PLAY_COINS). `participants` traz só os humanos (pode ser um só).
+   */
+  cpuPlayers?: number;
 }
 
 type Tx = Prisma.TransactionClient;
@@ -86,7 +97,9 @@ export class ArenaService {
 
   /** null = já liquidada antes (idempotente) ou sem jogadores suficientes. */
   async settle(input: MatchInput): Promise<Map<string, MatchResultDto> | null> {
-    if (input.participants.length < 2) return null;
+    const vsCpu = (input.cpuPlayers ?? 0) > 0;
+    if (!vsCpu && input.participants.length < 2) return null;
+    if (vsCpu && input.participants.length === 0) return null;
     try {
       return await this.prisma.$transaction((tx) => this.settleIn(tx, input));
     } catch (error) {
@@ -137,6 +150,7 @@ export class ArenaService {
     tx: Tx,
     input: MatchInput,
   ): Promise<Map<string, MatchResultDto> | null> {
+    if ((input.cpuPlayers ?? 0) > 0) return this.settleCpuIn(tx, input);
     const ids = [...new Set(input.participants.map((p) => p.userId))].sort();
     const profiles = await tx.profile.findMany({ where: { id: { in: ids } } });
     if (profiles.length < 2) return null;
@@ -274,6 +288,101 @@ export class ArenaService {
     return out;
   }
 
+  /**
+   * Partida com CPU na mesa: nada de pote, aposta, multa, pontos ou sequência. Quem é logado,
+   * ficou até o fim e jogou pelo menos CPU_MIN_MS ganha CPU_WIN_COINS se venceu (colocação 1)
+   * ou CPU_PLAY_COINS se não, até CPU_DAILY_CAP partidas pagas por dia.
+   */
+  async settleCpuIn(
+    tx: Tx,
+    input: MatchInput,
+  ): Promise<Map<string, MatchResultDto> | null> {
+    const humans = input.participants.filter((p) => !isCpuId(p.userId));
+    const ids = [...new Set(humans.map((p) => p.userId))].sort();
+    if (ids.length === 0) return null;
+    const profiles = await tx.profile.findMany({ where: { id: { in: ids } } });
+    if (profiles.length === 0) return null;
+    const byId = new Map(profiles.map((p) => [p.id, p]));
+    const now = new Date();
+
+    const today = await tx.matchResult.findMany({
+      where: {
+        userId: { in: ids },
+        createdAt: { gte: dayStart(now) },
+        bonuses: { array_contains: [{ code: 'CPU' }] },
+      },
+      select: { userId: true },
+    });
+    const playedToday = new Map<string, number>();
+    for (const r of today)
+      playedToday.set(r.userId, (playedToday.get(r.userId) ?? 0) + 1);
+
+    const players = humans.length + (input.cpuPlayers ?? 0);
+    const out = new Map<string, MatchResultDto>();
+    const rows: Prisma.MatchResultCreateManyInput[] = [];
+    for (const p of humans) {
+      const profile = byId.get(p.userId);
+      if (!profile || out.has(p.userId)) continue;
+      const abandoned = p.abandoned ?? false;
+      const won = p.placement === 1 && !abandoned;
+      const paid =
+        !profile.isGuest &&
+        !abandoned &&
+        input.durationMs >= CPU_MIN_MS &&
+        (playedToday.get(p.userId) ?? 0) < CPU_DAILY_CAP;
+      const amount = paid ? (won ? CPU_WIN_COINS : CPU_PLAY_COINS) : 0;
+      if (amount > 0)
+        await credit(tx, p.userId, amount, 'BONUS', input.matchId);
+      if (!input.skipGamesPlayed)
+        await tx.profile.update({
+          where: { id: p.userId },
+          data: { gamesPlayed: { increment: 1 } },
+        });
+
+      const result: MatchResultDto = {
+        matchId: input.matchId,
+        game: input.game,
+        placement: p.placement,
+        players: Math.max(players, 2),
+        won,
+        abandoned,
+        pointsDelta: 0,
+        coinsDelta: amount,
+        staked: 0,
+        prize: 0,
+        // Sempre presente (mesmo zerado): marca a partida como contra a CPU e conta no teto do dia.
+        bonuses: [{ code: 'CPU', amount }],
+        streak: profile.streak,
+        points: profile.points,
+        tierUp: null,
+        rated: false,
+        vsCpu: true,
+        createdAt: now.toISOString(),
+      };
+      out.set(p.userId, result);
+      rows.push({
+        userId: p.userId,
+        matchId: result.matchId,
+        game: result.game,
+        placement: result.placement,
+        players: result.players,
+        won: result.won,
+        abandoned: result.abandoned,
+        rated: false,
+        pointsDelta: 0,
+        coinsDelta: result.coinsDelta,
+        staked: 0,
+        prize: 0,
+        bonuses: result.bonuses,
+        streak: result.streak,
+        pointsAfter: result.points,
+        createdAt: now,
+      });
+    }
+    await tx.matchResult.createMany({ data: rows });
+    return out;
+  }
+
   /** Pontos com piso em 0, sequência, calibração e o dia da primeira vitória. */
   private async updateProfile(
     tx: Tx,
@@ -357,6 +466,7 @@ export function toDto(row: ResultRow): MatchResultDto {
     points: row.pointsAfter,
     tierUp: (row.tierUp as MatchResultDto['tierUp']) ?? null,
     rated: row.rated,
+    vsCpu: bonuses.some((b) => b.code === 'CPU'),
     createdAt: row.createdAt.toISOString(),
   };
 }

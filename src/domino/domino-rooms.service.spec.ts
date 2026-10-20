@@ -416,3 +416,61 @@ describe('DominoRoomsService — match', () => {
     expect(timer.scheduled(TURN) + timer.scheduled(PAUSE)).toBe(0);
   });
 });
+
+describe('DominoRoomsService — CPU', () => {
+  const THINK = 1_100;
+
+  function withBots(bots: number) {
+    const ctx = setup();
+    const code = ctx.service.create(ana, 's0', true).state.code;
+    for (let i = 0; i < bots; i++) ctx.service.addBot(ana.userId);
+    return { ...ctx, code };
+  }
+
+  it('only the host seats or removes a CPU, which is always ready', () => {
+    const { service, state, code } = withBots(1);
+    service.join(code, bia, 's-u1');
+    expect(state().seats[1]).toMatchObject({ bot: true, ready: true });
+    expect(codeOf(() => service.addBot(bia.userId))).toBe('NOT_HOST');
+    service.removeBot(ana.userId, 1);
+    expect(state().seats[1]).toBeNull();
+  });
+
+  it('a lone player against CPUs plays a whole match, settled as a CPU match', () => {
+    const { service, state, timer, publisher, arena } = withBots(3);
+    service.setReady(ana.userId, true);
+    service.start(ana.userId);
+
+    for (let step = 0; step < 3000 && state().phase === 'PLAYING'; step++) {
+      const round = state().round!;
+      if (round.phase === 'ROUND_OVER') timer.fire(PAUSE);
+      else if (round.turn !== 0) timer.fire(THINK);
+      else {
+        const hand = publisher.last('domino:private_hand', 'user:u0');
+        if (hand.playable.length > 0)
+          service.play(
+            ana.userId,
+            hand.playable[0].id,
+            hand.playable[0].sides[0],
+          );
+        else if (hand.mustDraw) service.draw(ana.userId);
+        else timer.fire(TURN);
+      }
+    }
+    expect(state().phase).toBe('FINISHED');
+    expect(arena.settleSafe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        game: 'DOMINO',
+        cpuPlayers: 3,
+        participants: [expect.objectContaining({ userId: ana.userId })],
+      }),
+    );
+  });
+
+  it('closes the table when the last human leaves', () => {
+    const { service, timer } = withBots(2);
+    service.leave(ana.userId);
+    expect(service.roomOf(ana.userId)).toBeUndefined();
+    expect(timer.pending).toHaveLength(0);
+  });
+});

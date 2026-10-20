@@ -14,9 +14,14 @@ export class MatchTracker {
   readonly matchId = randomUUID();
   private readonly left = new Set<number>();
 
+  /**
+   * `players` são só os humanos. `cpuPlayers` > 0 = teve CPU na mesa: a Arena liquida como
+   * partida contra a CPU (sem ranking nem aposta, só o agrado fixo).
+   */
   constructor(
     private readonly players: readonly TrackedPlayer[],
     private readonly startedAt: number,
+    readonly cpuPlayers = 0,
   ) {}
 
   /** Saiu no meio da partida: perde, paga multa e não recebe nada. */

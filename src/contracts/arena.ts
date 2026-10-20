@@ -217,6 +217,7 @@ export const BONUS_CODES = [
   'FIRST_WIN',
   'UNDERDOG',
   'COMEBACK',
+  'CPU',
 ] as const;
 export type BonusCode = (typeof BONUS_CODES)[number];
 
@@ -227,7 +228,25 @@ export const BONUS_LABELS: Record<BonusCode, string> = {
   FIRST_WIN: 'Primeira vitória do dia',
   UNDERDOG: 'Venceu quem era mais forte',
   COMEBACK: 'Virada depois de derrotas',
+  CPU: 'Partida contra a CPU',
 };
+
+/**
+ * Partida com CPU (treino sozinho ou mesa completada com bots): não vale ranking, não cobra
+ * entrada nem aposta e paga só um agrado fixo a quem é logado e jogou até o fim.
+ */
+export const CPU_WIN_COINS = 10;
+export const CPU_PLAY_COINS = 5;
+/** Partida contra a CPU mais curta que isto não paga (anti-farm de partida relâmpago). */
+export const CPU_MIN_MS = 30_000;
+/** Partidas contra a CPU que pagam por dia (fuso São Paulo); depois disso valem só a diversão. */
+export const CPU_DAILY_CAP = 30;
+/** Prefixo do id sintético dos bots (`cpu:N`): nunca é um uuid de perfil. */
+export const CPU_ID_PREFIX = 'cpu:';
+
+export function isCpuId(userId: string): boolean {
+  return userId.startsWith(CPU_ID_PREFIX);
+}
 
 export const matchResultSchema = z.object({
   matchId: z.string(),
@@ -257,6 +276,8 @@ export const matchResultSchema = z.object({
     .nullable(),
   /** Só jogadores logados pontuam; convidado vê o motivo. */
   rated: z.boolean(),
+  /** Teve CPU na mesa: sem ranking, sem aposta, só o agrado fixo. */
+  vsCpu: z.boolean().optional(),
   createdAt: z.string(),
 });
 export type MatchResultDto = z.infer<typeof matchResultSchema>;

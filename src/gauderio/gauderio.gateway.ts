@@ -21,6 +21,8 @@ import {
   gaudSetSettingsSchema,
   gaudPlayCardSchema,
   gaudReadySchema,
+  gaudAddBotSchema,
+  gaudRemoveBotSchema,
   gaudCallSchema,
   gaudRespondSchema,
   gaudFoldSchema,
@@ -274,6 +276,40 @@ export class GaudGateway
       body,
       (user, { ready }) => {
         this.tables.setReady(user.id, ready);
+        return Promise.resolve(null);
+      },
+    );
+  }
+
+  @SubscribeMessage(GaudClientEvents.ADD_BOT)
+  onAddBot(
+    @ConnectedSocket() socket: GaudSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      gaudAddBotSchema,
+      body,
+      (user, { seat }) => {
+        this.tables.addBot(user.id, seat as GaudSeat | undefined);
+        return Promise.resolve(null);
+      },
+    );
+  }
+
+  @SubscribeMessage(GaudClientEvents.REMOVE_BOT)
+  onRemoveBot(
+    @ConnectedSocket() socket: GaudSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      gaudRemoveBotSchema,
+      body,
+      (user, { seat }) => {
+        this.tables.removeBot(user.id, seat as GaudSeat);
         return Promise.resolve(null);
       },
     );

@@ -47,6 +47,7 @@ export class SnapshotService {
       status: room.status,
       winPattern: room.winPattern,
       stake: room.stake,
+      cpuPlayers: room.cpuPlayers,
       members: room.members.map((m) => ({
         userId: m.userId,
         nickname: m.profile.nickname ?? 'Jogador',

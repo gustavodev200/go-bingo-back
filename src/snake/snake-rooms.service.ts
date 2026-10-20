@@ -1,7 +1,8 @@
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import {
+  CPU_MIN_MS,
+  SNAKE_CPU_FILL,
   SNAKE_MAX_PLAYERS,
-  SNAKE_MIN_PLAYERS,
   SNAKE_SKINS,
   SNAKE_TICK_MS,
   SNAKE_TICK_RATE,
@@ -20,6 +21,7 @@ import { RANDOM_INT, type RandomInt } from '../core/random';
 import { DRAW_TIMER, type DrawTimer } from '../game/draw-timer';
 import { generateRoomCode } from '../rooms/room-code';
 import { Arena, type ArenaEvent, type Snake } from './engine/arena';
+import { SNAKE_BOT_NAMES, steerBot } from './engine/bot';
 import { SNAKE_PUBLISHER, type SnakePublisher } from './snake-publisher';
 
 export interface SnakeConfig {
@@ -27,6 +29,8 @@ export interface SnakeConfig {
   reconnectGraceMs: number;
   /** Rooms in memory at most (each runs a 20 Hz loop). */
   maxRooms: number;
+  /** Snakes the CPU fills the arena up to (default SNAKE_CPU_FILL; 0 = no CPU). */
+  cpuFill?: number;
 }
 export const SNAKE_CONFIG = Symbol('SNAKE_CONFIG');
 
@@ -55,6 +59,8 @@ interface Room {
   arena: Arena;
   players: Map<string, PlayerState>;
   bySnake: Map<number, PlayerState>;
+  /** Cobras da CPU vivas (id da cobra). Completam a arena enquanto há pouca gente. */
+  bots: Set<number>;
   timer: unknown;
   /** When the next tick is due (performance.now ms); keeps a steady 20 Hz. */
   nextTickAt: number;
@@ -66,8 +72,10 @@ const MAX_VIEW = 4000;
 
 /**
  * The single authority over Snake.io rooms: public/private rooms with a
- * code, up to 20 players (humans only), the 20 Hz arena loop, per-player
- * frames, leaderboard, reconnection window and host handover.
+ * code, up to 20 players, the 20 Hz arena loop, per-player frames,
+ * leaderboard, reconnection window and host handover. While few people are
+ * online, CPU snakes fill the arena (up to SNAKE_CPU_FILL snakes in all), so
+ * one player alone can play too.
  */
 @Injectable()
 export class SnakeRoomsService implements OnModuleDestroy {
@@ -108,6 +116,7 @@ export class SnakeRoomsService implements OnModuleDestroy {
       arena: new Arena({ onEvent: (ev) => this.onEvent(room, ev) }),
       players: new Map(),
       bySnake: new Map(),
+      bots: new Set(),
       timer: undefined,
       nextTickAt: performance.now() + SNAKE_TICK_MS,
       version: 0,
@@ -169,14 +178,6 @@ export class SnakeRoomsService implements OnModuleDestroy {
     const p = room.players.get(userId)!;
     const current = room.arena.snakes.get(p.snakeId);
     if (current) return { id: current.id };
-    const online = [...room.players.values()].filter(
-      (o) => o.sockets.size,
-    ).length;
-    if (online < SNAKE_MIN_PLAYERS)
-      throw new DomainError(
-        'NOT_ENOUGH_PLAYERS',
-        'Precisa de pelo menos 2 jogadores na sala. Chame alguém pelo código!',
-      );
     const s = room.arena.spawn(
       p.nickname,
       Math.max(0, Math.min(SNAKE_SKINS.length - 1, skin)),
@@ -368,9 +369,15 @@ export class SnakeRoomsService implements OnModuleDestroy {
       killerId: ev.killer?.id ?? 0,
       victimId: s.id,
     });
+    if (room.bots.delete(s.id)) {
+      const hunter = ev.killer ? room.bySnake.get(ev.killer.id) : undefined;
+      if (hunter) this.settleCpu(hunter, true);
+      return;
+    }
     const p = room.bySnake.get(s.id);
     if (!p) return;
-    this.settleKill(room, p, ev.killer);
+    if (ev.killer && room.bots.has(ev.killer.id)) this.settleCpu(p, false);
+    else this.settleKill(room, p, ev.killer);
     room.bySnake.delete(s.id);
     p.snakeId = 0;
     p.dead = true;
@@ -408,8 +415,53 @@ export class SnakeRoomsService implements OnModuleDestroy {
     });
   }
 
+  /**
+   * Abate envolvendo a CPU: sem ranking nem duelo, só o agrado fixo (vitória ao derrubar uma
+   * CPU, participação ao cair para ela), com a vida durando pelo menos CPU_MIN_MS.
+   */
+  private settleCpu(human: PlayerState, won: boolean): void {
+    const durationMs = Date.now() - human.bornAt;
+    if (durationMs < CPU_MIN_MS) return;
+    void this.arena.settleSafe({
+      matchId: randomUUID(),
+      game: 'SNAKE',
+      durationMs,
+      cpuPlayers: 1,
+      participants: [{ userId: human.userId, placement: won ? 1 : 2 }],
+    });
+  }
+
+  /** Completa a arena com CPUs até SNAKE_CPU_FILL cobras e decide para onde elas vão. */
+  private driveBots(room: Room): void {
+    const arena = room.arena;
+    if (arena.tick % SNAKE_TICK_RATE === 0) {
+      const online = [...room.players.values()].filter(
+        (p) => p.sockets.size,
+      ).length;
+      const fill = this.config.cpuFill ?? SNAKE_CPU_FILL;
+      const want = online > 0 ? Math.max(0, fill - online) : 0;
+      if (room.bots.size < want) {
+        const used = new Set(
+          [...room.bots].map((id) => arena.snakes.get(id)?.name),
+        );
+        const name =
+          SNAKE_BOT_NAMES.find((n) => !used.has(n)) ?? SNAKE_BOT_NAMES[0];
+        const skin = Math.floor(arena.rng() * SNAKE_SKINS.length);
+        room.bots.add(arena.spawn(name, skin).id);
+      }
+    }
+    if (arena.tick % 2 !== 0) return;
+    for (const id of room.bots) {
+      const s = arena.snakes.get(id);
+      if (!s) continue;
+      const { angle, boost } = steerBot(arena, s, arena.rng);
+      arena.setInput(id, angle, boost);
+    }
+  }
+
   private tick(room: Room): void {
     const arena = room.arena;
+    this.driveBots(room);
     arena.step();
 
     const ranking = arena.ranking();

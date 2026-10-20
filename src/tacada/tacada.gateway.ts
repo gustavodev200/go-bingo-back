@@ -25,6 +25,7 @@ import {
   TacadaServerEvents,
   tacadaSetRulesSchema,
   tacadaReadySchema,
+  tacadaRemoveBotSchema,
   tacadaVisibilitySchema,
   userChannel,
   setStakeSchema,
@@ -270,6 +271,34 @@ export class TacadaGateway
       body,
       (user, { ready }) => {
         this.tables.setReady(user.id, ready);
+        return Promise.resolve(null);
+      },
+    );
+  }
+
+  @SubscribeMessage(TacadaClientEvents.ADD_BOT)
+  onAddBot(
+    @ConnectedSocket() socket: TacadaSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(socket, 'default', tacadaEmptySchema, body, (user) => {
+      this.tables.addBot(user.id);
+      return Promise.resolve(null);
+    });
+  }
+
+  @SubscribeMessage(TacadaClientEvents.REMOVE_BOT)
+  onRemoveBot(
+    @ConnectedSocket() socket: TacadaSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      tacadaRemoveBotSchema,
+      body,
+      (user, { seat }) => {
+        this.tables.removeBot(user.id, seat);
         return Promise.resolve(null);
       },
     );

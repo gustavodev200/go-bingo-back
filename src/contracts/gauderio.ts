@@ -198,6 +198,8 @@ export interface GaudSeatPlayer {
   userId: string;
   nickname: string;
   character: string | null;
+  /** CPU chamada pelo anfitrião (id sintético `cpu:N`). */
+  bot: boolean;
   ready: boolean;
   connected: boolean;
   /** Epoch ms em que o lugar reservado é liberado; null enquanto conectado. */
@@ -356,6 +358,9 @@ export const GaudClientEvents = {
   LEAVE: 'gauderio:leave',
   TAKE_SEAT: 'gauderio:take_seat',
   READY: 'gauderio:ready',
+  /** Host only, lobby only: a CPU takes the first free seat. */
+  ADD_BOT: 'gauderio:add_bot',
+  REMOVE_BOT: 'gauderio:remove_bot',
   START: 'gauderio:start',
   PLAY_CARD: 'gauderio:play_card',
   CALL: 'gauderio:call',
@@ -413,6 +418,22 @@ export const gaudTakeSeatSchema = z.object({
   seat: z.number().int().min(0).max(3),
 });
 export const gaudReadySchema = z.object({ ready: z.boolean() });
+/** Sem `seat`, a CPU senta no primeiro lugar vago (com duplas, o anfitrião escolhe o lado). */
+export const gaudAddBotSchema = z.object({
+  seat: z
+    .number()
+    .int()
+    .min(0)
+    .max(GAUD_MAX_SEATS - 1)
+    .optional(),
+});
+export const gaudRemoveBotSchema = z.object({
+  seat: z
+    .number()
+    .int()
+    .min(0)
+    .max(GAUD_MAX_SEATS - 1),
+});
 export const gaudPlayCardSchema = z.object({
   actionId: actionIdSchema,
   cardId: z.string().min(1).max(32),
@@ -428,7 +449,7 @@ export const gaudRespondSchema = z.object({
 });
 export const gaudFoldSchema = z.object({ actionId: actionIdSchema });
 
-export type GaudLeftReason = 'left' | 'expired';
+export type GaudLeftReason = 'left' | 'expired' | 'removed';
 
 export interface GaudServerEventPayloads {
   'gauderio:state': GaudRoomState;
@@ -494,6 +515,8 @@ export interface GaudClientAckData {
   'gauderio:leave': null;
   'gauderio:take_seat': null;
   'gauderio:ready': null;
+  'gauderio:add_bot': null;
+  'gauderio:remove_bot': null;
   'gauderio:start': null;
   'gauderio:play_card': null;
   'gauderio:call': null;

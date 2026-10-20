@@ -75,7 +75,7 @@ interface Hand {
 const nextSeat = (seat: Seat): Seat => ((seat + 1) % 4) as Seat;
 const otherTeam = (team: Team): Team => (1 - team) as Team;
 
-function nextBetValue(value: number): number | null {
+export function nextBetValue(value: number): number | null {
   const i = TRUCO_BET_LADDER.indexOf(
     value as (typeof TRUCO_BET_LADDER)[number],
   );

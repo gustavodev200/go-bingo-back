@@ -113,6 +113,8 @@ model Room {
   winPattern     WinPattern   @default(FULL_CARD)
   /// Aposta de cada jogador (Arena: múltiplo da entrada mínima do bingo).
   stake          Int          @default(20)
+  /// Cartelas jogadas pela CPU (0 = só gente). Partida com CPU não vale ranking.
+  cpuPlayers     Int          @default(0)
   createdAt      DateTime     @default(now())
   members        RoomMember[]
   games          Game[]

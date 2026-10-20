@@ -1,6 +1,6 @@
 # Arena — moedas e ranking únicos para todos os jogos
 
-Antes só o bingo pagava moedas e pontos. Agora **todo jogo** (bingo, UNO, truco, dominó, Snake.io, Bomber) liquida
+Antes só o bingo pagava moedas e pontos. Agora **todo jogo** liquida
 pela mesma regra: uma carteira, um ranking, as mesmas ligas, e cada disputa tem algo em jogo.
 
 ```
@@ -73,10 +73,39 @@ múltiplos da entrada mínima do jogo (`ARENA_RULES[game].ante`), em `STAKE_LEVE
 - A multa de abandono é a aposta da mesa (não a mínima).
 - **Bônus e pontos não mudam com a aposta**: o ranking mede habilidade, não saldo. A taxa das mesas altas tira moedas
   de circulação e equilibra os diamantes.
-- Sozinho contra a CPU (Bomber/Infiltrado) nada é checado nem liquidado.
+- Mesa com CPU não aposta: nada é checado nem cobrado (ver *Partidas contra a CPU*).
 - **Bingo**: a primeira cartela é o "sentar": pede aposta + cartela. A cartela automática do início continua sem travar
   a partida (quem não tem saldo joga e paga até zerar).
 - **Snake** não tem lobby (arena contínua): continua no valor mínimo por abate.
+
+## Partidas contra a CPU
+
+Todo jogo aceita CPU, para quem quer treinar ou está sozinho. O anfitrião chama a CPU no lobby
+(`<jogo>:add_bot` / `<jogo>:remove_bot`; no bingo `room:set_cpus { count }`, até 3 cartelas). No Snake.io
+as cobras da CPU aparecem sozinhas enquanto há pouca gente online (completam até `SNAKE_CPU_FILL` cobras).
+
+| Regra | Valor |
+|---|---|
+| Ranking | não conta (`rated: false`, `pointsDelta: 0`, sequência intacta) |
+| Entrada / aposta / multa | nenhuma (mesa com CPU ignora a aposta escolhida) |
+| Vitória (colocação 1) | `CPU_WIN_COINS` = 10 moedas |
+| Derrota / empate | `CPU_PLAY_COINS` = 5 moedas |
+| Abandono, convidado, partida < `CPU_MIN_MS` (30 s) | 0 |
+| Teto | `CPU_DAILY_CAP` = 30 partidas pagas por dia (fuso São Paulo) |
+
+- Basta **uma** CPU na mesa para a partida inteira ser "contra a CPU", mesmo com várias pessoas (assim ninguém
+  usa a CPU para inflar o ranking de um amigo).
+- `MatchTracker(humanos, início, cpuPlayers)` → `settleSafe({ ..., cpuPlayers })` → `ArenaService.settleCpuIn`.
+  O resultado leva `bonuses: [{ code: 'CPU', amount }]` (sempre, mesmo zerado: é o que conta no teto do dia) e
+  `vsCpu: true`.
+- Snake.io: derrubar uma CPU = vitória, cair para uma CPU = derrota (vida de pelo menos 30 s).
+- Bingo: as cartelas da CPU são linhas de `Card` com ids fixos (`BINGO_CPU_IDS`); a CPU grita bingo no sorteio
+  seguinte ao que completou a cartela, se ninguém gritou antes.
+- As CPUs (`src/<jogo>/engine/bot.ts`) só usam o que o próprio lugar enxerga (mão privada + estado público):
+  nunca espiam cartas dos outros. Damas usa alfa-beta de 3 lances, Tacada simula as tacadas com a mesma física
+  da mesa (com erro de mira), Blackjack segue a estratégia básica.
+
+Migration `20261021120000_bingo_cpu`: `Room.cpuPlayers` (0 a 3).
 
 ## Diamantes
 
@@ -98,7 +127,7 @@ diamantes para passar moedas a outra conta.
 - **Retorno decrescente por par**: mesmo adversário nas últimas 24 h — 3 partidas cheias, até 8 pela metade, depois zero
   (afeta pontos e bônus dos dois lados, simétrico).
 - **Abandono** = derrota na última colocação + multa (a entrada de novo, que vai para o pote de quem ficou) + sem bônus.
-- **CPU** (Bomber) não entra: mesa com 1 humano não liquida.
+- **CPU** nunca pontua: partida com CPU na mesa vira *partida contra a CPU* (abaixo).
 - Liquidação idempotente e em fila (uma de cada vez): sem pagamento duplicado, sem esgotar conexões.
 
 ## Banco

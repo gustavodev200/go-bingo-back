@@ -18,11 +18,13 @@ import {
   stakeLevel,
 } from '../contracts';
 import { ArenaService } from '../arena/arena.service';
+import { CPU_THINK_MS, cpuNickname, cpuUserId } from '../arena/cpu';
 import { MatchTracker } from '../arena/match-tracker';
 import { DomainError } from '../core/domain-error';
 import { RANDOM_INT, type RandomInt } from '../core/random';
 import { DRAW_TIMER, type DrawTimer } from '../game/draw-timer';
 import { generateRoomCode } from '../rooms/room-code';
+import { trucoBotAction, trucoBotFallback } from './engine/bot';
 import { TrucoMatch, type Announcement } from './engine/match';
 import { TRUCO_PUBLISHER, type TrucoPublisher } from './truco-publisher';
 
@@ -46,6 +48,8 @@ export interface TrucoPlayer {
 }
 
 interface SeatState extends TrucoPlayer {
+  /** CPU: joga sozinha, nunca segura a mesa aberta e não entra na Arena. */
+  bot: boolean;
   ready: boolean;
   sockets: Set<string>;
   reconnectDeadline: number | null;
@@ -68,6 +72,9 @@ interface Room {
   seq: number;
   version: number;
   handTimer: unknown;
+  botCount: number;
+  /** Próxima ação de CPU agendada (decidida na hora em que dispara). */
+  botTimer: unknown;
 }
 
 /**
@@ -134,6 +141,8 @@ export class TrucoRoomsService implements OnModuleDestroy {
       seq: 0,
       version: 0,
       handTimer: undefined,
+      botCount: 0,
+      botTimer: undefined,
     };
     room.seats[0] = this.newSeat(player, socketId);
     this.rooms.set(code, room);
@@ -213,7 +222,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
       );
     if (room.stake === stake) return;
     room.stake = stake;
-    for (const s of room.seats) if (s) s.ready = false;
+    for (const s of room.seats) if (s && !s.bot) s.ready = false;
     this.publish(room, []);
   }
 
@@ -227,8 +236,55 @@ export class TrucoRoomsService implements OnModuleDestroy {
   /** Quem aposta se a partida começar agora: os humanos sentados (sozinho contra CPU não vale nada). */
   stakeCheck(userId: string): { stake: number; userIds: string[] } {
     const room = this.requireRoom(userId);
+    if (room.seats.some((s) => s?.bot))
+      return { stake: room.stake, userIds: [] };
     const userIds = room.seats.flatMap((s) => (s ? [s.userId] : []));
     return { stake: room.stake, userIds: userIds.length >= 2 ? userIds : [] };
+  }
+
+  /** O anfitrião completa a mesa com uma CPU (sempre pronta). */
+  addBot(userId: string, seat?: Seat): void {
+    const room = this.requireRoom(userId);
+    this.requirePhase(room, 'LOBBY');
+    if (room.hostId !== userId)
+      throw new DomainError('NOT_HOST', 'Só o anfitrião chama a CPU');
+    const free = seat ?? room.seats.findIndex((s) => s === null);
+    if (free < 0 || room.seats[free])
+      throw new DomainError('ROOM_FULL', 'Esse lugar não está vago');
+    room.botCount++;
+    room.seats[free] = {
+      userId: cpuUserId(room.botCount),
+      nickname: cpuNickname(room.seats.filter((s) => s?.bot).length),
+      character: null,
+      bot: true,
+      ready: true,
+      sockets: new Set(),
+      reconnectDeadline: null,
+      expiryTimer: undefined,
+    };
+    this.publish(room, [
+      {
+        event: 'truco:player_joined',
+        payload: { player: this.seatView(room, free as Seat)! },
+      },
+    ]);
+  }
+
+  removeBot(userId: string, seat: Seat): void {
+    const room = this.requireRoom(userId);
+    this.requirePhase(room, 'LOBBY');
+    if (room.hostId !== userId)
+      throw new DomainError('NOT_HOST', 'Só o anfitrião tira a CPU');
+    const bot = room.seats[seat];
+    if (!bot?.bot)
+      throw new DomainError('INVALID_STATE', 'Esse lugar não é da CPU');
+    room.seats[seat] = null;
+    this.publish(room, [
+      {
+        event: 'truco:player_left',
+        payload: { seat, userId: bot.userId, reason: 'removed' },
+      },
+    ]);
   }
 
   setVisibility(userId: string, isPublic: boolean): void {
@@ -246,7 +302,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
     if (room.hostId !== userId)
       throw new DomainError('NOT_HOST', 'Só o anfitrião escolhe o modo');
     room.mode = mode;
-    for (const s of room.seats) if (s) s.ready = false;
+    for (const s of room.seats) if (s && !s.bot) s.ready = false;
     this.publish(room, []);
   }
 
@@ -331,13 +387,17 @@ export class TrucoRoomsService implements OnModuleDestroy {
     room.phase = 'PLAYING';
     room.result = null;
     room.tracker = new MatchTracker(
-      seated.map((s) => ({ seat: room.seats.indexOf(s), userId: s.userId })),
+      seated
+        .filter((s) => !s.bot)
+        .map((s) => ({ seat: room.seats.indexOf(s), userId: s.userId })),
       this.now(),
+      seated.filter((s) => s.bot).length,
     );
     this.publish(room, [
       { event: 'truco:match_started', payload: {} },
       ...room.match.deal(),
     ]);
+    this.driveBots(room);
   }
 
   rematch(userId: string): void {
@@ -346,7 +406,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
     room.phase = 'LOBBY';
     room.match = null;
     room.result = null;
-    for (const s of room.seats) if (s) s.ready = false;
+    for (const s of room.seats) if (s && !s.bot) s.ready = false;
     this.publish(room, []);
   }
 
@@ -431,9 +491,34 @@ export class TrucoRoomsService implements OnModuleDestroy {
         if (this.rooms.get(room.code) !== room || room.match !== match) return;
         if (room.phase !== 'PLAYING') return;
         this.publish(room, match.deal());
+        this.driveBots(room);
       }, this.config.handPauseMs);
     }
     this.publish(room, out);
+    this.driveBots(room);
+  }
+
+  /**
+   * Alguma CPU tem o que fazer (jogar, responder aposta, decidir a mão de dez)? Agenda uma
+   * ação; ela é decidida na hora em que dispara, com a mesa como estiver então.
+   */
+  private driveBots(room: Room): void {
+    if (room.botTimer || room.phase !== 'PLAYING' || !room.match) return;
+    if (!room.seats.some((s) => s?.bot)) return;
+    const match = room.match;
+    room.botTimer = this.timer.set(() => {
+      room.botTimer = undefined;
+      if (this.rooms.get(room.code) !== room || room.match !== match) return;
+      if (room.phase !== 'PLAYING') return;
+      const isBot = (seat: Seat) => room.seats[seat]?.bot ?? false;
+      let out: Announcement[] | null;
+      try {
+        out = trucoBotAction(match, isBot, this.random);
+      } catch {
+        out = trucoBotFallback(match, isBot);
+      }
+      if (out) this.afterMatchChange(room, match, out);
+    }, CPU_THINK_MS);
   }
 
   /** Moedas e ranking: a dupla vencedora divide o pote. Roda uma vez por partida. */
@@ -449,6 +534,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
       participants: tracker.participants((seat) =>
         teamOf(seat as Seat) === winnerTeam ? 1 : 2,
       ),
+      cpuPlayers: tracker.cpuPlayers,
     });
   }
 
@@ -479,15 +565,17 @@ export class TrucoRoomsService implements OnModuleDestroy {
     this.publisher.removeFromRoom(userId, room.code);
     out.push({ event: 'truco:player_left', payload: { seat, userId, reason } });
 
-    if (room.seats.every((s) => s === null)) {
+    if (!room.seats.some((s) => s && !s.bot)) {
       this.clearTimers(room);
       this.rooms.delete(room.code);
       this.publisher.publicRoomsChanged(() => this.listPublic());
       return;
     }
     if (room.hostId === userId) {
-      const next = room.seats.find((s) => s && s.sockets.size > 0);
-      room.hostId = (next ?? room.seats.find((s) => s !== null)!).userId;
+      const humans = room.seats.filter((s): s is SeatState => !!s && !s.bot);
+      room.hostId = (
+        humans.find((s) => s.sockets.size > 0) ?? humans[0]
+      ).userId;
     }
     this.publish(room, out);
   }
@@ -516,7 +604,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
     );
     if (!room.match || room.phase === 'LOBBY') return;
     room.seats.forEach((s, seat) => {
-      const hand = s && room.match!.privateView(seat as Seat);
+      const hand = s && !s.bot && room.match!.privateView(seat as Seat);
       if (hand)
         this.publisher.toUser(s.userId, TrucoServerEvents.PRIVATE_HAND, hand);
     });
@@ -559,6 +647,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
       userId: s.userId,
       nickname: s.nickname,
       character: s.character,
+      bot: s.bot,
       ready: s.ready,
       connected: s.reconnectDeadline === null,
       reconnectDeadline: s.reconnectDeadline,
@@ -580,6 +669,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
   private newSeat(player: TrucoPlayer, socketId: string): SeatState {
     return {
       ...player,
+      bot: false,
       ready: false,
       sockets: new Set([socketId]),
       reconnectDeadline: null,
@@ -616,6 +706,7 @@ export class TrucoRoomsService implements OnModuleDestroy {
 
   private clearTimers(room: Room): void {
     this.timer.clear(room.handTimer);
+    this.timer.clear(room.botTimer);
     for (const s of room.seats) if (s) this.timer.clear(s.expiryTimer);
   }
 }

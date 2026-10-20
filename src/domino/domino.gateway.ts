@@ -23,6 +23,8 @@ import {
   dominoPlaySchema,
   dominoSetRulesSchema,
   dominoReadySchema,
+  dominoAddBotSchema,
+  dominoRemoveBotSchema,
   dominoVisibilitySchema,
   userChannel,
   setStakeSchema,
@@ -266,6 +268,40 @@ export class DominoGateway
       body,
       (user, { ready }) => {
         this.tables.setReady(user.id, ready);
+        return Promise.resolve(null);
+      },
+    );
+  }
+
+  @SubscribeMessage(DominoClientEvents.ADD_BOT)
+  onAddBot(
+    @ConnectedSocket() socket: DominoSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      dominoAddBotSchema,
+      body,
+      (user, { seat }) => {
+        this.tables.addBot(user.id, seat);
+        return Promise.resolve(null);
+      },
+    );
+  }
+
+  @SubscribeMessage(DominoClientEvents.REMOVE_BOT)
+  onRemoveBot(
+    @ConnectedSocket() socket: DominoSocket,
+    @MessageBody() body: unknown,
+  ) {
+    return this.handle(
+      socket,
+      'default',
+      dominoRemoveBotSchema,
+      body,
+      (user, { seat }) => {
+        this.tables.removeBot(user.id, seat);
         return Promise.resolve(null);
       },
     );
