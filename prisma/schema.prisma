@@ -59,6 +59,7 @@ enum ArenaGame {
   DAMAS
   BLACKJACK
   TACADA
+  GAUDERIO
 }
 
 /// RLS ligada por migration (enable_rls); novas tabelas precisam do mesmo ALTER na migration que as cria.

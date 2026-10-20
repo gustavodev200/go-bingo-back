@@ -17,6 +17,7 @@ import { InfiltradoModule } from './infiltrado/infiltrado.module';
 import { DamasModule } from './damas/damas.module';
 import { BjModule } from './blackjack/blackjack.module';
 import { TacadaModule } from './tacada/tacada.module';
+import { GauderioModule } from './gauderio/gauderio.module';
 import { GameModule } from './game/game.module';
 import { GuestsModule } from './guests/guests.module';
 import { HealthController } from './health/health.controller';
@@ -48,6 +49,7 @@ import { VoiceModule } from './voice/voice.module';
     InfiltradoModule,
     DamasModule,
     TacadaModule,
+    GauderioModule,
     BjModule,
     VoiceModule,
   ],

@@ -59,6 +59,22 @@ const envSchema = z.object({
     .default(2_500),
   // Truco: tables kept in memory at most (one per player).
   TRUCO_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
+  // Truco Gaudério: how long a disconnected player's seat stays reserved.
+  GAUDERIO_RECONNECT_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(600_000)
+    .default(60_000),
+  // Truco Gaudério: pause between the end of a hand and the next deal.
+  GAUDERIO_HAND_PAUSE_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(10_000)
+    .default(2_500),
+  // Truco Gaudério: tables kept in memory at most (one per player).
+  GAUDERIO_MAX_ROOMS: z.coerce.number().int().min(1).default(1_000),
   // UNO: how long a disconnected player's seat stays reserved.
   UNO_RECONNECT_GRACE_MS: z.coerce
     .number()

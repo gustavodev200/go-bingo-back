@@ -6,6 +6,7 @@ export * from './coins';
 export * from './damas';
 export * from './diamonds';
 export * from './domino';
+export * from './gauderio';
 export * from './infiltrado';
 export * from './profile';
 export * from './room';
