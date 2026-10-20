@@ -18,6 +18,7 @@ export const ARENA_GAMES = [
   'DOMINO',
   'SNAKE',
   'BOMBER',
+  'INFILTRADO',
 ] as const;
 export type ArenaGame = (typeof ARENA_GAMES)[number];
 
@@ -28,6 +29,7 @@ export const ARENA_GAME_LABELS: Record<ArenaGame, string> = {
   DOMINO: 'Dominó',
   SNAKE: 'Snake.io',
   BOMBER: 'Bomber',
+  INFILTRADO: 'Infiltrado',
 };
 
 export interface ArenaRules {
@@ -92,6 +94,15 @@ export const ARENA_RULES: Record<ArenaGame, ArenaRules> = {
     winBonus: 50,
     ratingWeight: 1,
     minRatedMs: 60_000,
+    finishBonus: 5,
+    countsStreak: true,
+  },
+  // Infiltrado: o time vencedor divide o pote; dedução pesa mais que sorte.
+  INFILTRADO: {
+    ante: 30,
+    winBonus: 40,
+    ratingWeight: 0.7,
+    minRatedMs: 120_000,
     finishBonus: 5,
     countsStreak: true,
   },
