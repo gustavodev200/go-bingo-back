@@ -7,6 +7,8 @@ import { ENV, type Env } from '../core/env';
 import { DominoRoomsService } from '../domino/domino-rooms.service';
 import { DominoModule } from '../domino/domino.module';
 import { GameModule } from '../game/game.module';
+import { InfRoomsService } from '../infiltrado/infiltrado-rooms.service';
+import { InfiltradoModule } from '../infiltrado/infiltrado.module';
 import { MembershipService } from '../game/membership.service';
 import { ProfilesModule } from '../profiles/profiles.module';
 import { TrucoRoomsService } from '../truco/truco-rooms.service';
@@ -23,7 +25,14 @@ import {
 } from './voice.gateway';
 
 @Module({
-  imports: [ProfilesModule, GameModule, TrucoModule, UnoModule, DominoModule],
+  imports: [
+    ProfilesModule,
+    GameModule,
+    TrucoModule,
+    UnoModule,
+    DominoModule,
+    InfiltradoModule,
+  ],
   providers: [
     VoiceChannelsService,
     {
@@ -41,14 +50,18 @@ import {
         TrucoRoomsService,
         UnoRoomsService,
         DominoRoomsService,
+        InfRoomsService,
       ],
       useFactory: (
         bingo: MembershipService,
         truco: TrucoRoomsService,
         uno: UnoRoomsService,
         domino: DominoRoomsService,
+        inf: InfRoomsService,
       ): VoiceMembership => ({
         isMember: (game, code, userId) => {
+          if (game === 'infiltrado')
+            return Promise.resolve(inf.canTalk(code, userId));
           if (game === 'truco')
             return Promise.resolve(truco.roomOf(userId) === code);
           if (game === 'uno')
@@ -60,6 +73,15 @@ import {
       }),
     },
     VoiceGateway,
+    {
+      // When an Infiltrado meeting closes, its voice channel closes right away (not at the next sweep).
+      provide: 'INF_VOICE_BRIDGE',
+      inject: [InfRoomsService, VoiceGateway],
+      useFactory: (inf: InfRoomsService, voice: VoiceGateway) =>
+        inf.onVoiceRightsChanged(
+          (code) => void voice.sweep({ game: 'infiltrado', code }),
+        ),
+    },
   ],
 })
 export class VoiceModule {}

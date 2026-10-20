@@ -8,11 +8,20 @@ import { roomCodeSchema } from './room';
 
 export const VOICE_NAMESPACE = '/voice';
 
-export const VOICE_GAMES = ['bingo', 'truco', 'uno', 'domino'] as const;
+export const VOICE_GAMES = [
+  'bingo',
+  'truco',
+  'uno',
+  'domino',
+  'infiltrado',
+] as const;
 export type VoiceGame = (typeof VOICE_GAMES)[number];
 
 /** Full mesh: every peer uploads its audio once per other peer, so the channel stays small. */
 export const VOICE_MAX_PEERS = 8;
+/** Infiltrado meetings seat up to 15 (short talks, so the bigger mesh is fine). */
+export const voiceMaxPeers = (game: VoiceGame) =>
+  game === 'infiltrado' ? 15 : VOICE_MAX_PEERS;
 
 export const voiceChannel = (game: VoiceGame, code: string) =>
   `voice:${game}:${code}`;

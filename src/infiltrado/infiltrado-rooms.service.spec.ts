@@ -235,3 +235,66 @@ describe('InfRoomsService', () => {
     expect(() => service.act('zz', { t: 'emergency' })).toThrow('sala');
   });
 });
+
+describe('InfRoomsService voice rights', () => {
+  it('only living voters may talk, only during a meeting, and changes are announced', () => {
+    const publisher = new FakePublisher();
+    const timer = new FakeTimer();
+    let seq = 7;
+    const random = (min: number, max: number) => {
+      seq = (seq * 1103515245 + 12345) & 0x7fffffff;
+      return min + (seq % Math.max(1, max - min));
+    };
+    const service = new InfRoomsService(
+      publisher,
+      { reconnectGraceMs: GRACE, maxRooms: 3, now: () => NOW },
+      random,
+      timer,
+      {
+        settleSafe: jest.fn().mockResolvedValue(null),
+      } as unknown as ArenaService,
+    );
+    const changed: string[] = [];
+    service.onVoiceRightsChanged((code) => changed.push(code));
+    const code = service.create(player('a'), 's-a').state.code;
+    for (const id of 'bcde') service.join(code, player(id), `s-${id}`);
+    for (const id of 'abcde') service.setReady(id, true);
+    service.start('a');
+    expect(service.canTalk(code, 'a')).toBe(false);
+
+    // Skip the intro, then press the button from the table.
+    const rooms = (
+      service as unknown as {
+        rooms: Map<
+          string,
+          {
+            match: {
+              phase: string;
+              buttonCd: number;
+              players: Map<number, { x: number; y: number }>;
+            };
+          }
+        >;
+      }
+    ).rooms;
+    const match = rooms.get(code)!.match;
+    for (let i = 0; i < 200 && match.phase !== 'play'; i++)
+      timer.fire(INF_TICK_MS);
+    match.buttonCd = 0;
+    Object.assign(match.players.get(0)!, { x: 32, y: 19 });
+    changed.length = 0;
+    service.act('a', { t: 'emergency' });
+    expect(changed).toEqual([code]);
+    expect(service.canTalk(code, 'b')).toBe(true);
+    expect(service.canTalk(code, 'zz')).toBe(false);
+    expect(service.canTalk('NOPE00', 'b')).toBe(false);
+
+    // Meeting over (vote, result, ejection): voice rights are gone and announced.
+    // Discussion and voting run out on the clock.
+    for (let i = 0; i < 3000 && match.phase === 'meeting'; i++)
+      timer.fire(INF_TICK_MS);
+    expect(service.canTalk(code, 'b')).toBe(false);
+    expect(changed.length).toBeGreaterThanOrEqual(2);
+    service.onModuleDestroy();
+  });
+});

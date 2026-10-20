@@ -91,6 +91,7 @@ type Announcement = {
 export class InfRoomsService implements OnModuleDestroy {
   private readonly rooms = new Map<string, Room>();
   private readonly userRoom = new Map<string, string>();
+  private readonly voiceListeners = new Set<(code: string) => void>();
 
   constructor(
     @Inject(INF_PUBLISHER) private readonly publisher: InfPublisher,
@@ -108,6 +109,31 @@ export class InfRoomsService implements OnModuleDestroy {
 
   roomOf(userId: string): string | undefined {
     return this.userRoom.get(userId);
+  }
+
+  /** Voice is only for meetings, and only for who could vote in them (ghosts stay silent). */
+  canTalk(code: string, userId: string): boolean {
+    const room = this.rooms.get(code);
+    const meeting = room?.match?.meeting;
+    if (
+      !room ||
+      room.phase !== 'PLAYING' ||
+      room.match?.phase !== 'meeting' ||
+      !meeting
+    )
+      return false;
+    const seat = this.seatOf(room, userId);
+    return seat !== null && meeting.voters.includes(seat);
+  }
+
+  /** Called with the room code whenever who may talk changes (a meeting opens or closes). */
+  onVoiceRightsChanged(fn: (code: string) => void): () => void {
+    this.voiceListeners.add(fn);
+    return () => this.voiceListeners.delete(fn);
+  }
+
+  private voiceChanged(code: string): void {
+    for (const fn of this.voiceListeners) fn(code);
   }
 
   create(player: InfPlayer, socketId: string, isPublic = true): InfSnapshot {
@@ -362,7 +388,9 @@ export class InfRoomsService implements OnModuleDestroy {
   act(userId: string, action: InfAct): void {
     const room = this.requirePlaying(userId);
     const match = room.match!;
+    const before = match.phase;
     match.act(this.seatOf(room, userId)!, action);
+    if (match.phase !== before) this.voiceChanged(room.code);
     if (match.phase === 'over') this.finish(room);
   }
 
@@ -396,6 +424,7 @@ export class InfRoomsService implements OnModuleDestroy {
     const before = match.phase;
     match.tick();
     room.ticks++;
+    if (match.phase !== before) this.voiceChanged(room.code);
     if (match.phase === 'over') return this.finish(room);
     const fast = match.phase === 'play';
     if (fast || before !== match.phase || room.ticks % SLOW_FRAME_EVERY === 0)
@@ -462,6 +491,7 @@ export class InfRoomsService implements OnModuleDestroy {
     room.seats[seat] = null;
     this.userRoom.delete(userId);
     this.publisher.removeFromRoom(userId, room.code);
+    this.voiceChanged(room.code);
     if (room.phase === 'PLAYING') room.tracker?.markLeft(seat);
 
     if (!room.seats.some((s) => s && !s.bot)) {
