@@ -28,6 +28,8 @@ import {
   type GaudSettings,
   type GaudSideResult,
   type GaudTeam,
+  type GaudFinish,
+  type GaudVote,
 } from '../../contracts';
 import { DomainError } from '../../core/domain-error';
 import type { RandomInt } from '../../core/random';
@@ -65,6 +67,21 @@ interface Round {
   winningSeat: GaudSeat | null;
 }
 
+type PendingCall = Omit<GaudPending, 'votes'>;
+
+interface Vote {
+  seat: GaudSeat;
+  choice: GaudVote;
+}
+
+/** Quanto mais ousado, mais alto: não quero < quero < aumento de truco < envido < flor. */
+const boldness = (choice: GaudVote) =>
+  choice === 'decline'
+    ? 0
+    : choice === 'accept'
+      ? 1
+      : 2 + GAUD_CALLS.indexOf(choice);
+
 interface Hand {
   number: number;
   mano: GaudSeat;
@@ -75,10 +92,14 @@ interface Hand {
   cards: DealtCard[][];
   trucoValue: number;
   trucoLastRaiseTeam: GaudTeam | null;
-  pending: GaudPending | null;
-  trucoOnHold: GaudPending | null;
+  pending: PendingCall | null;
+  trucoOnHold: PendingCall | null;
+  /** Votos da dupla que responde ao canto pendente. */
+  votes: Vote[];
   envidoClosed: boolean;
   florDeclared: boolean;
+  /** Quem tinha flor e jogou a primeira carta sem cantar: perdeu a flor. */
+  florLost: GaudSeat[];
   sideResults: GaudSideResult[];
   rounds: Round[];
   result: GaudHandResult | null;
@@ -156,6 +177,7 @@ export class GaudMatch {
   readonly scores: [number, number];
   readonly settings: GaudSettings;
   private winnerTeam: GaudTeam | null = null;
+  private finishInfo: GaudFinish | null = null;
   private dealer: GaudSeat;
   private handCount = 0;
   private hand: Hand | null = null;
@@ -179,6 +201,11 @@ export class GaudMatch {
 
   get winner(): GaudTeam | null {
     return this.winnerTeam;
+  }
+
+  /** Como saiu o ponto que fechou a partida (null antes do fim ou em W.O.). */
+  get finish(): GaudFinish | null {
+    return this.finishInfo;
   }
 
   get phase(): GaudHandPhase {
@@ -224,8 +251,10 @@ export class GaudMatch {
       trucoLastRaiseTeam: null,
       pending: null,
       trucoOnHold: null,
+      votes: [],
       envidoClosed: false,
       florDeclared: false,
+      florLost: [],
       sideResults: [],
       rounds: [{ plays: [], result: null, winningSeat: null }],
       result: null,
@@ -243,29 +272,34 @@ export class GaudMatch {
     return hand.rounds[0].plays.some((p) => p.seat === seat);
   }
 
-  private florHolders(hand: Hand, team: GaudTeam): GaudSeat[] {
-    if (!this.settings.flor) return [];
-    return this.orderFrom(hand.mano).filter(
-      (s) => gaudTeamOf(s) === team && hasFlor(hand.dealt[s]),
-    );
-  }
-
-  /** O jogador tem flor e ainda precisa cantá-la. */
-  private mustDeclareFlor(hand: Hand, seat: GaudSeat): boolean {
+  /** Tem flor válida: a regra está ligada e não a perdeu jogando a 1ª carta sem cantar. */
+  private holdsFlor(hand: Hand, seat: GaudSeat): boolean {
     return (
       this.settings.flor &&
-      !hand.florDeclared &&
-      hand.rounds.length === 1 &&
       hasFlor(hand.dealt[seat]) &&
-      !this.playedInFirstRound(hand, seat)
+      !hand.florLost.includes(seat)
     );
   }
 
-  /** A dupla tem flor ainda não cantada (aí não se joga envido: canta-se a flor). */
-  private teamOwesFlor(hand: Hand, team: GaudTeam): boolean {
-    return this.florHolders(hand, team).some((s) =>
-      this.mustDeclareFlor(hand, s),
+  private florHolders(hand: Hand, team: GaudTeam): GaudSeat[] {
+    return this.orderFrom(hand.mano).filter(
+      (s) => gaudTeamOf(s) === team && this.holdsFlor(hand, s),
     );
+  }
+
+  /** Pode cantar flor agora (é opcional): 1ª rodada, antes de jogar, sem envido já disputado. */
+  private canSingFlor(hand: Hand, seat: GaudSeat): boolean {
+    return (
+      !hand.florDeclared &&
+      hand.rounds.length === 1 &&
+      this.holdsFlor(hand, seat) &&
+      !this.playedInFirstRound(hand, seat) &&
+      !hand.sideResults.some((r) => r.kind === 'envido')
+    );
+  }
+
+  private partnerOf(seat: GaudSeat): GaudSeat | null {
+    return this.settings.size === 4 ? (((seat + 2) % 4) as GaudSeat) : null;
   }
 
   private active(): Hand | null {
@@ -280,8 +314,6 @@ export class GaudMatch {
       return 'O envido só vale na primeira rodada';
     if (this.playedInFirstRound(hand, seat))
       return 'Envido só antes de jogar sua carta';
-    if (this.teamOwesFlor(hand, gaudTeamOf(seat)))
-      return 'Sua dupla tem flor: cante a flor';
     return null;
   }
 
@@ -302,7 +334,7 @@ export class GaudMatch {
           return TRUCO_STEPS[i + 1] === call ? null : 'Aumento inválido';
         }
         if (kind === 'flor')
-          return call === 'flor' && this.mustDeclareFlor(hand, seat)
+          return call === 'flor' && this.canSingFlor(hand, seat)
             ? null
             : 'Você não tem flor para cantar';
         if (pending.call !== 'truco' || hand.trucoOnHold)
@@ -317,12 +349,10 @@ export class GaudMatch {
       }
       if (pending.kind === 'envido') {
         if (kind === 'flor')
-          return call === 'flor' && this.mustDeclareFlor(hand, seat)
+          return call === 'flor' && this.canSingFlor(hand, seat)
             ? null
             : 'Você não tem flor para cantar';
         if (kind === 'truco') return 'Responda o envido primeiro';
-        if (this.teamOwesFlor(hand, team))
-          return 'Sua dupla tem flor: cante a flor';
         return envidoRaises(pending.chain).includes(call)
           ? null
           : 'Aumento de envido inválido';
@@ -348,7 +378,7 @@ export class GaudMatch {
       return null;
     }
     if (kind === 'flor')
-      return call === 'flor' && this.mustDeclareFlor(hand, seat)
+      return call === 'flor' && this.canSingFlor(hand, seat)
         ? null
         : 'Você não tem flor para cantar';
     if (call !== 'envido' && call !== 'real_envido' && call !== 'falta_envido')
@@ -367,8 +397,6 @@ export class GaudMatch {
     if (!pending) return 'Não há canto para responder';
     const team = gaudTeamOf(seat);
     if (pending.team === team) return 'Quem responde é a outra dupla';
-    if (pending.kind === 'envido' && this.teamOwesFlor(hand, team))
-      return 'Sua dupla tem flor: cante a flor';
     if (pending.kind === 'flor' && accept && pending.chain.length === 1)
       return 'Responda com contra-flor ou fuja';
     return null;
@@ -389,15 +417,12 @@ export class GaudMatch {
         'INVALID_MOVE',
         'Só dá para esconder carta da segunda rodada em diante',
       );
-    if (this.mustDeclareFlor(hand, seat))
-      throw new DomainError(
-        'INVALID_MOVE',
-        'Você tem flor! Cante a flor antes de jogar',
-      );
     const mine = hand.cards[seat];
     const index = mine.findIndex((c) => c.id === cardId);
     if (index < 0)
       throw new DomainError('INVALID_MOVE', 'Essa carta não está na sua mão');
+    // Flor é opcional: quem joga a primeira carta sem cantar perde a flor.
+    if (this.canSingFlor(hand, seat)) hand.florLost.push(seat);
     const [{ card }] = mine.splice(index, 1);
 
     const round = hand.rounds[hand.rounds.length - 1];
@@ -420,8 +445,77 @@ export class GaudMatch {
     return [...out, ...this.closeRound(hand, round)];
   }
 
-  call(seat: GaudSeat, call: GaudCall): Announcement[] {
+  /**
+   * Um canto. Vindo da dupla que responde a um canto pendente, é um voto de aumento.
+   * `solo`: o voto decide sozinho (parceiro ausente ou CPU).
+   */
+  call(seat: GaudSeat, call: GaudCall, solo = false): Announcement[] {
     const hand = this.requireHand();
+    if (hand.pending && hand.pending.team !== gaudTeamOf(seat))
+      return this.vote(hand, seat, call, solo);
+    return this.applyCall(seat, call);
+  }
+
+  /** Quero / não quero: um voto da dupla que responde. */
+  respond(seat: GaudSeat, accept: boolean, solo = false): Announcement[] {
+    const hand = this.requireHand();
+    return this.vote(hand, seat, accept ? 'accept' : 'decline', solo);
+  }
+
+  /** `absent` saiu da votação: decide com o voto do parceiro, se já votou. */
+  resolveVotes(absent: GaudSeat): Announcement[] {
+    const hand = this.active();
+    const partner = this.partnerOf(absent);
+    if (!hand?.pending || partner === null) return [];
+    if (!hand.votes.some((v) => v.seat === partner)) return [];
+    return this.decideVotes(hand);
+  }
+
+  /**
+   * Em duplas a resposta é votada: decide quando os dois votam (ou na hora, com
+   * `solo` / mano a mano). Se discordarem, vale o voto mais ousado. Até lá dá para
+   * trocar o voto.
+   */
+  private vote(
+    hand: Hand,
+    seat: GaudSeat,
+    choice: GaudVote,
+    solo: boolean,
+  ): Announcement[] {
+    const error =
+      choice === 'accept' || choice === 'decline'
+        ? this.respondError(seat, choice === 'accept')
+        : this.callError(seat, choice);
+    if (error) throw new DomainError('INVALID_MOVE', error);
+    hand.votes = [
+      ...hand.votes.filter((v) => v.seat !== seat),
+      { seat, choice },
+    ];
+    const partner = this.partnerOf(seat);
+    if (
+      !solo &&
+      partner !== null &&
+      !hand.votes.some((v) => v.seat === partner)
+    )
+      return [
+        { event: 'gauderio:voted', payload: { seat, team: gaudTeamOf(seat) } },
+      ];
+    return this.decideVotes(hand);
+  }
+
+  private decideVotes(hand: Hand): Announcement[] {
+    const { seat, choice } = hand.votes.reduce((best, v) =>
+      boldness(v.choice) > boldness(best.choice) ? v : best,
+    );
+    hand.votes = [];
+    if (choice === 'accept' || choice === 'decline')
+      return this.applyRespond(seat, choice === 'accept');
+    return this.applyCall(seat, choice);
+  }
+
+  private applyCall(seat: GaudSeat, call: GaudCall): Announcement[] {
+    const hand = this.requireHand();
+    hand.votes = [];
     const error = this.callError(seat, call);
     if (error) throw new DomainError('INVALID_MOVE', error);
     const team = gaudTeamOf(seat);
@@ -480,6 +574,8 @@ export class GaudMatch {
         ...this.resolveSide(hand, {
           kind: 'flor',
           winnerTeam: team,
+          seat,
+          chain: ['flor'],
           points: GAUD_FLOR_POINTS,
           accepted: false,
           teamPoints: [null, null],
@@ -492,7 +588,7 @@ export class GaudMatch {
     return out;
   }
 
-  respond(seat: GaudSeat, accept: boolean): Announcement[] {
+  private applyRespond(seat: GaudSeat, accept: boolean): Announcement[] {
     const hand = this.requireHand();
     const error = this.respondError(seat, accept);
     if (error) throw new DomainError('INVALID_MOVE', error);
@@ -531,6 +627,8 @@ export class GaudMatch {
           ...this.resolveSide(hand, {
             kind: 'envido',
             winnerTeam: pending.team,
+            seat: pending.seat,
+            chain: pending.chain,
             points,
             accepted: false,
             teamPoints: [null, null],
@@ -550,6 +648,8 @@ export class GaudMatch {
           kind: 'envido',
           points,
           accepted: true,
+          seat: duel.bestSeats[duel.winnerTeam]!,
+          chain: pending.chain,
           ...duel,
         }),
       ];
@@ -567,6 +667,8 @@ export class GaudMatch {
         ...this.resolveSide(hand, {
           kind: 'flor',
           winnerTeam: pending.team,
+          seat: pending.seat,
+          chain: pending.chain,
           points,
           accepted: false,
           teamPoints: [null, null],
@@ -579,9 +681,7 @@ export class GaudMatch {
         ? faltaPoints(this.scores, this.settings.target)
         : GAUD_CONTRAFLOR_POINTS;
     const duel = this.compare(hand, (s) =>
-      this.settings.flor && hasFlor(hand.dealt[s])
-        ? florPoints(hand.dealt[s])
-        : null,
+      this.holdsFlor(hand, s) ? florPoints(hand.dealt[s]) : null,
     );
     return [
       ...out,
@@ -589,6 +689,8 @@ export class GaudMatch {
         kind: 'flor',
         points,
         accepted: true,
+        seat: duel.bestSeats[duel.winnerTeam]!,
+        chain: pending.chain,
         ...duel,
       }),
     ];
@@ -616,6 +718,7 @@ export class GaudMatch {
       this.hand.phase = 'HAND_OVER';
       this.hand.pending = null;
       this.hand.trucoOnHold = null;
+      this.hand.votes = [];
     }
     return [
       {
@@ -624,6 +727,7 @@ export class GaudMatch {
           winnerTeam: this.winnerTeam,
           reason: 'abandoned',
           scores: [...this.scores],
+          finish: null,
         },
       },
     ];
@@ -647,11 +751,13 @@ export class GaudMatch {
       pending: hand.pending && {
         ...hand.pending,
         chain: [...hand.pending.chain],
+        votes: hand.votes.length,
       },
       trucoOnHold: hand.trucoOnHold !== null,
       envidoClosed: hand.envidoClosed || hand.rounds.length > 1,
       sideResults: hand.sideResults.map((r) => ({
         ...r,
+        chain: [...r.chain],
         teamPoints: [...r.teamPoints],
         bestSeats: [...r.bestSeats],
       })),
@@ -676,9 +782,19 @@ export class GaudMatch {
       handNumber: hand.number,
       cards: hand.cards[seat].map((c) => ({ id: c.id, card: { ...c.card } })),
       envido: envidoPoints(hand.dealt[seat]),
-      flor: this.settings.flor && hasFlor(hand.dealt[seat]),
+      flor: this.holdsFlor(hand, seat),
       actions: this.actionsOf(seat),
+      votes: this.votesOf(hand, seat),
     };
+  }
+
+  private votesOf(hand: Hand, seat: GaudSeat): GaudPrivateHand['votes'] {
+    const pending = hand.pending;
+    if (!pending || hand.phase !== 'AWAITING_RESPONSE') return null;
+    if (pending.team === gaudTeamOf(seat)) return null;
+    const of = (s: GaudSeat | null) =>
+      hand.votes.find((v) => v.seat === s)?.choice ?? null;
+    return { mine: of(seat), partner: of(this.partnerOf(seat)) };
   }
 
   actionsOf(seat: GaudSeat): GaudActions {
@@ -693,7 +809,7 @@ export class GaudMatch {
     };
     if (!hand) return none;
     const myTurn = hand.phase === 'AWAITING_PLAY' && hand.turn === seat;
-    const canPlay = myTurn && !this.mustDeclareFlor(hand, seat);
+    const canPlay = myTurn;
     return {
       canPlay,
       canHide: canPlay && hand.rounds.length > 1,
@@ -742,7 +858,11 @@ export class GaudMatch {
     hand.sideResults.push(result);
     const out: Announcement[] = [
       { event: 'gauderio:side_resolved', payload: { ...result } },
-      ...this.award(result.winnerTeam, result.points),
+      ...this.award(result.winnerTeam, result.points, {
+        by: result.kind,
+        points: result.points,
+        side: result,
+      }),
     ];
     if (this.winnerTeam !== null) {
       hand.phase = 'HAND_OVER';
@@ -799,11 +919,15 @@ export class GaudMatch {
     hand.result = { winnerTeam: winner, points, reason };
     return [
       { event: 'gauderio:hand_ended', payload: { ...hand.result } },
-      ...this.award(winner, points),
+      ...this.award(winner, points, { by: reason, points, side: null }),
     ];
   }
 
-  private award(team: GaudTeam, points: number): Announcement[] {
+  private award(
+    team: GaudTeam,
+    points: number,
+    finish: GaudFinish,
+  ): Announcement[] {
     const target = this.settings.target;
     this.scores[team] = Math.min(target, this.scores[team] + points);
     const out: Announcement[] = [
@@ -814,7 +938,9 @@ export class GaudMatch {
     ];
     if (this.scores[team] >= target && this.winnerTeam === null) {
       this.winnerTeam = team;
+      this.finishInfo = finish;
       if (this.hand) {
+        this.hand.votes = [];
         this.hand.phase = 'HAND_OVER';
         this.hand.pending = null;
       }
@@ -824,6 +950,7 @@ export class GaudMatch {
           winnerTeam: team,
           reason: 'points',
           scores: [...this.scores],
+          finish,
         },
       });
     }

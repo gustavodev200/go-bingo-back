@@ -30,12 +30,18 @@ autoridade única no servidor, estado em memória.
   (envido → real → não quero = 2; envido + real → falta → não quero = 5).
   Pontos: 20 + duas cartas do mesmo naipe (figuras valem 0); sem naipe repetido, a maior carta.
   Empate fica com quem está mais perto do mão. Os pontos entram na hora.
-- **Flor** (três do mesmo naipe): obrigatória — o servidor não deixa jogar a primeira carta antes de cantar.
-  Anula o envido. Sem flor do outro lado: +3. Com flor do outro lado, a outra dupla responde
+- **Flor** (três do mesmo naipe): opcional. Pode cantar na 1ª rodada antes de jogar sua carta (e antes de um
+  envido já disputado); quem joga a primeira carta sem cantar perde a flor. Quem tem flor também pode preferir o envido.
+  Cantada, anula o envido. Sem flor do outro lado: +3. Com flor do outro lado, a outra dupla responde
   Contra-flor (6 para a maior flor, 20 + as três cartas), Contra-flor e o resto (a falta) ou foge (+4 para quem cantou;
   fugir da contra-flor e o resto depois de uma contra-flor dá 6).
 - Ganha quem chegar ao alvo (placar limitado ao alvo; a partida acaba na hora, até no meio da mão).
-- Resposta a qualquer canto: o primeiro jogador da dupla adversária que responder decide.
+- Resposta a qualquer canto (truco, envido, flor) é **votação da dupla** que responde: cada um vota
+  quero / não quero / um aumento e vê o voto do parceiro (os adversários só sabem quantos votaram, evento `voted`).
+  Decide com os dois votos; se discordarem vale o mais ousado (flor > envido > aumento de truco > quero > não quero).
+  Mano a mano, parceiro caído/fora ou CPU: o voto decide sozinho; se o parceiro cai no meio, vale o voto já dado.
+- Resultados de envido/flor trazem quem marcou (`seat`) e a sequência de cantos (`chain`); o resultado da partida traz
+  `finish` (como saiu o ponto final: rodadas, não quero, baralho, envido ou flor).
 
 Valores escolhidos onde o regulamento colado era ambíguo: Real Envido sozinho vale 3 (padrão argentino;
 só envido + real envido vale 5).

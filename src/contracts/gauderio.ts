@@ -144,6 +144,13 @@ export const GAUD_CALL_LABEL: Record<GaudCall, string> = {
   contraflor_resto: 'Contra-flor e o resto',
 };
 
+/**
+ * Voto de quem responde a um canto: aceitar, fugir ou aumentar (qualquer canto válido).
+ * Em duplas a resposta é votada; se discordarem vale o voto mais ousado
+ * (flor > envido > aumento de truco > quero > não quero).
+ */
+export type GaudVote = 'accept' | 'decline' | GaudCall;
+
 export type GaudCallKind = 'truco' | 'envido' | 'flor';
 export const gaudCallKind = (call: GaudCall): GaudCallKind =>
   call === 'truco' || call === 'retruco' || call === 'vale4'
@@ -228,6 +235,8 @@ export interface GaudPending {
   chain: GaudCall[];
   seat: GaudSeat;
   team: GaudTeam;
+  /** Quantos da dupla que responde já votaram (o voto em si só a dupla vê). */
+  votes: number;
 }
 
 /** Resultado de uma disputa de envido ou flor. */
@@ -235,6 +244,10 @@ export interface GaudSideResult {
   kind: 'envido' | 'flor';
   winnerTeam: GaudTeam;
   points: number;
+  /** Quem marcou: o melhor ponto da dupla vencedora, quem cantou a flor ou quem fez o canto recusado. */
+  seat: GaudSeat;
+  /** Cantos da disputa (ex.: flor → contraflor). */
+  chain: GaudCall[];
   /** false = fugiram (ninguém mostrou os pontos). */
   accepted: boolean;
   /** Melhores pontos de cada dupla quando houve comparação. */
@@ -271,10 +284,20 @@ export interface GaudMatchView {
   lastHandResult: GaudHandResult | null;
 }
 
+/** Como saiu o ponto que fechou a partida. */
+export interface GaudFinish {
+  by: GaudHandEndReason | 'envido' | 'flor';
+  points: number;
+  /** Disputa de envido/flor que fechou a partida, com quem marcou e os pontos. */
+  side: GaudSideResult | null;
+}
+
 export interface GaudMatchResult {
   winnerTeam: GaudTeam;
   reason: GaudMatchEndReason;
   scores: [number, number];
+  /** null quando a partida acabou por W.O. */
+  finish: GaudFinish | null;
 }
 
 export interface GaudRoomState {
@@ -319,9 +342,11 @@ export interface GaudPrivateHand {
   cards: GaudHandCard[];
   /** Pontos de envido das 3 cartas recebidas. */
   envido: number;
-  /** Tem flor (só com a regra ligada). */
+  /** Tem flor (só com a regra ligada). Cantar é opcional: jogar a 1ª carta sem cantar perde a flor. */
   flor: boolean;
   actions: GaudActions;
+  /** Enquanto minha dupla responde um canto: meu voto e o do parceiro. */
+  votes: { mine: GaudVote | null; partner: GaudVote | null } | null;
 }
 
 export interface GaudPublicRoom {
@@ -383,6 +408,8 @@ export const GaudServerEvents = {
   ROUND_ENDED: 'gauderio:round_ended',
   CALLED: 'gauderio:called',
   RESPONDED: 'gauderio:responded',
+  /** Alguém da dupla que responde votou (o voto em si vai só para a dupla). */
+  VOTED: 'gauderio:voted',
   SIDE_RESOLVED: 'gauderio:side_resolved',
   FOLDED: 'gauderio:folded',
   HAND_ENDED: 'gauderio:hand_ended',
@@ -494,6 +521,7 @@ export interface GaudServerEventPayloads {
     accept: boolean;
     call: GaudCall;
   };
+  'gauderio:voted': { seq: number; seat: GaudSeat; team: GaudTeam };
   'gauderio:side_resolved': { seq: number } & GaudSideResult;
   'gauderio:folded': { seq: number; seat: GaudSeat; team: GaudTeam };
   'gauderio:hand_ended': { seq: number } & GaudHandResult;

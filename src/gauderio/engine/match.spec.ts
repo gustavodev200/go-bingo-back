@@ -287,24 +287,64 @@ describe('GaudMatch mano a mano', () => {
     expect(m.callError(1, 'envido')).toMatch(/truco aceito/);
   });
 
-  it('flor sem flor do outro lado vale 3 e precisa ser cantada antes de jogar', () => {
+  it('flor sem flor do outro lado vale 3 e conta quem cantou', () => {
     const m = match([['7e', '6e', '12e'], B]);
     const mine = m.privateView(0)!;
     expect(mine.flor).toBe(true);
-    expect(mine.actions.canPlay).toBe(false);
-    expect(mine.actions.calls).toContain('flor');
-    expect(mine.actions.calls).not.toContain('envido');
-    expectDomain(() => play(m, 0, '7e'), /flor/);
-    m.call(0, 'flor');
+    expect(mine.actions.canPlay).toBe(true);
+    expect(mine.actions.calls).toEqual(
+      expect.arrayContaining(['flor', 'envido', 'truco']),
+    );
+    const out = m.call(0, 'flor');
+    expect(
+      out.find((a) => a.event === 'gauderio:side_resolved')!.payload,
+    ).toMatchObject({ kind: 'flor', seat: 0, chain: ['flor'], points: 3 });
     expect(m.scores).toEqual([3, 0]);
     expect(m.publicView()!.envidoClosed).toBe(true);
     play(m, 0, '7e');
   });
 
+  it('a flor é opcional: jogar sem cantar perde a flor', () => {
+    const m = match([
+      ['7e', '6e', '12e'],
+      ['1c', '2c', '3c'],
+    ]);
+    play(m, 0, '7e');
+    expect(m.privateView(0)!.flor).toBe(false);
+    // O adversário canta a flor e ganha 3 (a do lugar 0 não conta mais).
+    m.call(1, 'flor');
+    expect(m.scores).toEqual([0, 3]);
+  });
+
+  it('com flor dá para pedir envido em vez de cantar', () => {
+    const m = match([['7e', '6e', '12e'], B]);
+    m.call(0, 'envido');
+    m.respond(1, true);
+    // 33 contra 29.
+    expect(m.scores).toEqual([2, 0]);
+    // Envido disputado: a flor não pode mais ser cantada.
+    expect(m.callError(0, 'flor')).not.toBeNull();
+  });
+
+  it('a partida fechada pela flor diz como acabou', () => {
+    const m = match([['7e', '6e', '12e'], B], TWO, [10, 4]);
+    const out = m.call(0, 'flor');
+    expect(m.winner).toBe(0);
+    expect(m.finish).toMatchObject({
+      by: 'flor',
+      points: 3,
+      side: { seat: 0 },
+    });
+    expect(
+      out.find((a) => a.event === 'gauderio:match_over')!.payload,
+    ).toMatchObject({ finish: { by: 'flor' } });
+  });
+
   it('a flor anula o envido cantado', () => {
     const m = match([A, ['7c', '6c', '12c']]);
     m.call(0, 'envido');
-    expect(m.respondError(1, true)).toMatch(/flor/);
+    // Quem tem flor escolhe: aceitar o envido ou cantar a flor.
+    expect(m.respondError(1, true)).toBeNull();
     m.call(1, 'flor');
     expect(m.scores).toEqual([0, 3]);
     expect(m.publicView()!.pending).toBeNull();
@@ -423,10 +463,59 @@ describe('GaudMatch em duplas', () => {
     play(m, 1, '4e');
     expect(m.callError(2, 'envido')).toBeNull();
     m.call(2, 'envido');
-    // Qualquer um da outra dupla responde.
-    expect(m.respondError(1, true)).toBeNull();
-    m.respond(3, true);
+    // A dupla vota: só decide com os dois votos.
+    const voted = m.respond(3, true);
+    expect(voted.map((a) => a.event)).toEqual(['gauderio:voted']);
+    expect(m.publicView()!.pending!.votes).toBe(1);
+    expect(m.privateView(1)!.votes).toEqual({ mine: null, partner: 'accept' });
+    expect(m.privateView(0)!.votes).toBeNull();
+    m.respond(1, true);
     // Dupla 0: 7 (lugar 2); dupla 1: 6 (lugar 1).
     expect(m.scores).toEqual([2, 0]);
+  });
+
+  it('votação da dupla: o voto mais ousado vale, e dá para trocar o voto', () => {
+    const m = match(hands, FOUR);
+    m.call(0, 'truco');
+    m.respond(1, false);
+    m.respond(1, true); // trocou o voto
+    expect(m.privateView(3)!.votes).toEqual({ mine: null, partner: 'accept' });
+    m.respond(3, false);
+    // aceitar > não quero
+    expect(m.publicView()!.trucoValue).toBe(2);
+    expect(m.publicView()!.pending).toBeNull();
+
+    const m2 = match(hands, FOUR);
+    m2.call(0, 'truco');
+    m2.respond(1, true);
+    m2.call(3, 'retruco');
+    // aumentar > aceitar: agora a dupla 0 responde o retruco.
+    expect(m2.publicView()!.pending).toMatchObject({
+      call: 'retruco',
+      team: 1,
+    });
+    expect(m2.publicView()!.trucoValue).toBe(2);
+  });
+
+  it('votação: os dois não querem → a mão vai para quem pediu', () => {
+    const m = match(hands, FOUR);
+    m.call(0, 'truco');
+    m.respond(1, false);
+    m.respond(3, false);
+    expect(m.scores).toEqual([1, 0]);
+  });
+
+  it('voto solo e parceiro que sai decidem sem esperar', () => {
+    const m = match(hands, FOUR);
+    m.call(0, 'truco');
+    m.respond(1, true, true);
+    expect(m.publicView()!.trucoValue).toBe(2);
+
+    const m2 = match(hands, FOUR);
+    m2.call(0, 'truco');
+    expect(m2.resolveVotes(3)).toEqual([]);
+    m2.respond(1, false);
+    m2.resolveVotes(3);
+    expect(m2.scores).toEqual([1, 0]);
   });
 });

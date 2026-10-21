@@ -383,6 +383,7 @@ describe('GaudRoomsService — CPU', () => {
       const a = hand.actions;
       if (m.phase === 'HAND_OVER') t.timer.fire(PAUSE);
       else if (a.canAccept) t.service.respond(ana.userId, true);
+      else if (a.canDecline) t.service.respond(ana.userId, false);
       else if (hand.flor && a.calls.includes('flor'))
         t.service.call(ana.userId, 'flor');
       else if (a.canPlay)
@@ -433,5 +434,58 @@ describe('GaudRoomsService — CPU', () => {
     t.service.leave(ana.userId);
     expect(t.service.roomOf(ana.userId)).toBeUndefined();
     expect(t.timer.pending).toHaveLength(0);
+  });
+});
+
+describe('GaudRoomsService — votação da dupla', () => {
+  function pairs(t: T) {
+    const { code } = t.service.create(ana, 's-ana', true, FOUR).state;
+    for (const p of [bia, caio, duda])
+      t.service.join(code, p, `s-${p.nickname}`);
+    for (const p of [ana, bia, caio, duda]) t.service.setReady(p.userId, true);
+    t.service.start(ana.userId);
+  }
+  const at = (t: T, seat: number) =>
+    players.find((p) => p.userId === state(t).seats[seat]!.userId)!;
+
+  it('a resposta ao truco espera os dois votos e mostra o do parceiro', () => {
+    const t = setup();
+    pairs(t);
+    const caller = turnPlayer(t);
+    const seat = state(t).match!.turn;
+    t.service.call(caller.userId, 'truco');
+    const [r1, r2] = [at(t, (seat + 1) % 4), at(t, (seat + 3) % 4)];
+    t.service.respond(r1.userId, true);
+    expect(state(t).match!.pending).toMatchObject({ call: 'truco', votes: 1 });
+    expect(handOf(t, r2).votes).toEqual({ mine: null, partner: 'accept' });
+    expect(t.publisher.count('gauderio:voted')).toBe(1);
+    t.service.respond(r2.userId, false);
+    expect(state(t).match!.pending).toBeNull();
+    expect(state(t).match!.trucoValue).toBe(2);
+  });
+
+  it('se o parceiro cai, o voto de quem ficou decide', () => {
+    const t = setup();
+    pairs(t);
+    const seat = state(t).match!.turn;
+    t.service.call(turnPlayer(t).userId, 'truco');
+    const [r1, r2] = [at(t, (seat + 1) % 4), at(t, (seat + 3) % 4)];
+    t.service.respond(r1.userId, false);
+    t.service.disconnect(r2.userId, `s-${r2.nickname}`);
+    expect(state(t).match!.lastHandResult).toMatchObject({
+      reason: 'declined',
+      points: 1,
+    });
+  });
+
+  it('com o parceiro caído o voto já vale sozinho', () => {
+    const t = setup();
+    pairs(t);
+    const seat = state(t).match!.turn;
+    const [r1, r2] = [at(t, (seat + 1) % 4), at(t, (seat + 3) % 4)];
+    t.service.disconnect(r2.userId, `s-${r2.nickname}`);
+    t.service.call(turnPlayer(t).userId, 'truco');
+    t.service.respond(r1.userId, true);
+    expect(state(t).match!.trucoValue).toBe(2);
   });
 });
