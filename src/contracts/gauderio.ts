@@ -250,6 +250,8 @@ export interface GaudSideResult {
   chain: GaudCall[];
   /** false = fugiram (ninguém mostrou os pontos). */
   accepted: boolean;
+  /** compared = mostraram os pontos; declined = fugiram; uncontested = flor sem flor do outro lado. */
+  outcome: 'compared' | 'declined' | 'uncontested';
   /** Melhores pontos de cada dupla quando houve comparação. */
   teamPoints: [number | null, number | null];
   /** Quem tinha os melhores pontos de cada dupla. */

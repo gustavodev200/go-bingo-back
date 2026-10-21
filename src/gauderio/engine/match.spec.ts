@@ -298,7 +298,13 @@ describe('GaudMatch mano a mano', () => {
     const out = m.call(0, 'flor');
     expect(
       out.find((a) => a.event === 'gauderio:side_resolved')!.payload,
-    ).toMatchObject({ kind: 'flor', seat: 0, chain: ['flor'], points: 3 });
+    ).toMatchObject({
+      kind: 'flor',
+      seat: 0,
+      chain: ['flor'],
+      points: 3,
+      outcome: 'uncontested',
+    });
     expect(m.scores).toEqual([3, 0]);
     expect(m.publicView()!.envidoClosed).toBe(true);
     play(m, 0, '7e');
