@@ -333,12 +333,22 @@ export class GaudRoomsService implements OnModuleDestroy {
       this.removePlayer(room, userId, 'expired');
     }, this.config.reconnectGraceMs);
     this.ensureConnectedHost(room);
-    this.publish(room, [
+    const out: Announcement[] = [
       {
         event: 'gauderio:player_disconnected',
         payload: { seat, reconnectDeadline: state.reconnectDeadline },
       },
-    ]);
+    ];
+    // Uma votação nunca espera quem caiu: o voto do parceiro decide.
+    const decided =
+      room.phase === 'PLAYING' && room.match
+        ? room.match.resolveVotes(seat)
+        : [];
+    if (decided.length > 0) {
+      this.afterMatchChange(room, room.match!, [...out, ...decided]);
+      return;
+    }
+    this.publish(room, out);
   }
 
   takeSeat(userId: string, target: GaudSeat): void {
@@ -411,11 +421,23 @@ export class GaudRoomsService implements OnModuleDestroy {
   }
 
   call(userId: string, call: GaudCall): void {
-    this.matchAction(userId, (m, seat) => m.call(seat, call));
+    this.matchAction(userId, (m, seat, room) =>
+      m.call(seat, call, this.votesAlone(room, seat)),
+    );
   }
 
+  /** Um voto da dupla que responde; vale sozinho com o parceiro ausente ou CPU. */
   respond(userId: string, accept: boolean): void {
-    this.matchAction(userId, (m, seat) => m.respond(seat, accept));
+    this.matchAction(userId, (m, seat, room) =>
+      m.respond(seat, accept, this.votesAlone(room, seat)),
+    );
+  }
+
+  /** Mano a mano, parceiro fora da mesa, caído ou CPU: o voto decide sozinho. */
+  private votesAlone(room: Room, seat: GaudSeat): boolean {
+    if (room.settings.size === 2) return true;
+    const partner = room.seats[(seat + 2) % 4];
+    return !partner || partner.bot || partner.reconnectDeadline !== null;
   }
 
   fold(userId: string): void {
@@ -430,12 +452,12 @@ export class GaudRoomsService implements OnModuleDestroy {
 
   private matchAction(
     userId: string,
-    fn: (match: GaudMatch, seat: GaudSeat) => Announcement[],
+    fn: (match: GaudMatch, seat: GaudSeat, room: Room) => Announcement[],
   ): void {
     const room = this.requireRoom(userId);
     this.requirePhase(room, 'PLAYING');
     const match = room.match!;
-    const out = fn(match, this.seatOf(room, userId)!);
+    const out = fn(match, this.seatOf(room, userId)!, room);
     this.afterMatchChange(room, match, out);
   }
 
@@ -450,6 +472,7 @@ export class GaudRoomsService implements OnModuleDestroy {
         winnerTeam: match.winner,
         reason: 'points',
         scores: [...match.scores],
+        finish: match.finish,
       };
       this.settle(room, match.winner);
     } else if (match.phase === 'HAND_OVER') {
@@ -523,6 +546,7 @@ export class GaudRoomsService implements OnModuleDestroy {
         winnerTeam: room.match.winner!,
         reason: 'abandoned',
         scores: [...room.match.scores],
+        finish: null,
       };
       this.settle(room, room.match.winner!);
       this.timer.clear(room.handTimer);

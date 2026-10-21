@@ -13,6 +13,10 @@ import type { Announcement, GaudMatch } from './match';
 const strong = (cards: readonly GaudHandCard[]) =>
   cards.filter((c) => gaudStrength(c.card) >= 10).length;
 
+/** Pode responder o canto pendente (flor só se responde fugindo ou com contra-flor). */
+const canAnswer = (hand: GaudPrivateHand | undefined) =>
+  !!hand && (hand.actions.canAccept || hand.actions.canDecline);
+
 const first = (calls: readonly GaudCall[], wanted: readonly GaudCall[]) =>
   wanted.find((c) => calls.includes(c)) ?? null;
 
@@ -40,18 +44,18 @@ export function gaudBotAction(
   // 1) Answer what is pending (a human of the same team answers for it).
   for (const seat of all) {
     const hand = hands.get(seat);
-    if (!isBot(seat) || !hand?.actions.canAccept) continue;
+    if (!isBot(seat) || !hand || !canAnswer(hand)) continue;
     const humanCanAnswer = all.some(
       (s) =>
         !isBot(s) &&
         gaudTeamOf(s) === gaudTeamOf(seat) &&
-        hands.get(s)?.actions.canAccept,
+        canAnswer(hands.get(s)),
     );
     if (humanCanAnswer) continue;
     return answer(match, seat, hand, view.pending?.kind ?? 'truco', random);
   }
 
-  // 2) Flor must be sung before playing.
+  // 2) Flor is optional, but a CPU with flor always sings it before playing.
   for (const seat of all) {
     const hand = hands.get(seat);
     if (isBot(seat) && hand?.flor && hand.actions.calls.includes('flor'))
@@ -105,24 +109,28 @@ function answer(
   const calls = hand.actions.calls;
   if (kind === 'flor') {
     const raise = hand.flor ? first(calls, ['contraflor']) : null;
-    if (raise && random(0, 2) === 0) return match.call(seat, raise);
-    return match.respond(seat, hand.flor || !hand.actions.canDecline);
+    if (raise && random(0, 2) === 0) return match.call(seat, raise, true);
+    return match.respond(seat, hand.flor || !hand.actions.canDecline, true);
   }
   if (kind === 'envido') {
     if (hand.envido >= 31) {
       const raise = first(calls, ['real_envido', 'falta_envido']);
-      if (raise && random(0, 2) === 0) return match.call(seat, raise);
+      if (raise && random(0, 2) === 0) return match.call(seat, raise, true);
     }
-    return match.respond(seat, hand.envido >= 26 || !hand.actions.canDecline);
+    return match.respond(
+      seat,
+      hand.envido >= 26 || !hand.actions.canDecline,
+      true,
+    );
   }
   // Truco: a pending truco can be answered with envido first ("envido está primero").
   if (hand.envido >= 29 && calls.includes('envido'))
-    return match.call(seat, 'envido');
+    return match.call(seat, 'envido', true);
   const power = strong(hand.cards);
   const raise = first(calls, ['retruco', 'vale4']);
-  if (raise && power >= 2) return match.call(seat, raise);
+  if (raise && power >= 2) return match.call(seat, raise, true);
   const accept = power >= 1 || random(0, 5) === 0;
-  return match.respond(seat, accept || !hand.actions.canDecline);
+  return match.respond(seat, accept || !hand.actions.canDecline, true);
 }
 
 /** Safety net when a choice turns out invalid: accept, play the first card or fold. */
@@ -135,7 +143,8 @@ export function gaudBotFallback(
     const seat = s as GaudSeat;
     const hand = isBot(seat) ? match.privateView(seat) : null;
     if (!hand) continue;
-    if (hand.actions.canAccept) return match.respond(seat, true);
+    if (hand.actions.canAccept) return match.respond(seat, true, true);
+    if (hand.actions.canDecline) return match.respond(seat, false, true);
     if (hand.actions.canPlay) return match.play(seat, hand.cards[0].id);
     if (hand.actions.calls.includes('flor')) return match.call(seat, 'flor');
     if (hand.actions.canFold) return match.fold(seat);
