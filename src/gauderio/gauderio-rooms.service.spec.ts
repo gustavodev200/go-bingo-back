@@ -489,3 +489,64 @@ describe('GaudRoomsService — votação da dupla', () => {
     expect(state(t).match!.trucoValue).toBe(2);
   });
 });
+
+describe('GaudRoomsService — chat', () => {
+  const REPLY = 900;
+  const messages = (t: T, to: string) =>
+    t.publisher.sent.filter(
+      (m) => m.event === 'gauderio:chat_message' && m.to === to,
+    );
+
+  it('com a CPU parceira: só a dupla vê, e ela responde e obedece', () => {
+    const t = setup();
+    t.service.create(ana, 's-ana');
+    t.service.setSettings(ana.userId, FOUR);
+    for (let i = 0; i < 3; i++) t.service.addBot(ana.userId);
+    t.service.setReady(ana.userId, true);
+    t.service.start(ana.userId);
+    t.service.chat(ana.userId, 'team', 'cards');
+    expect(messages(t, `user:${ana.userId}`)).toHaveLength(1);
+    expect(messages(t, `room:${state(t).code}`)).toHaveLength(0);
+    t.timer.fire(REPLY);
+    const reply = messages(t, `user:${ana.userId}`)[1].payload;
+    expect(reply).toMatchObject({ seat: 2, to: 'team', bot: true });
+    t.service.chat(ana.userId, 'team', 'low');
+    t.timer.fire(REPLY);
+    expect(messages(t, `user:${ana.userId}`)[3].payload).toMatchObject({
+      seat: 2,
+      bot: true,
+    });
+  });
+
+  it('com a mesa: todos veem e a CPU adversária provoca', () => {
+    const t = setup();
+    t.service.create(ana, 's-ana');
+    t.service.addBot(ana.userId);
+    t.service.setReady(ana.userId, true);
+    t.service.start(ana.userId);
+    const code = state(t).code;
+    expect(errorCode(() => t.service.chat(ana.userId, 'team', 'cards'))).toBe(
+      'INVALID_STATE',
+    );
+    t.service.chat(ana.userId, 'table', 'taunt');
+    expect(messages(t, `room:${code}`)[0].payload).toMatchObject({
+      seat: 0,
+      text: 'Vem que tem!',
+      bot: false,
+    });
+    t.timer.fire(REPLY);
+    expect(messages(t, `room:${code}`)[1].payload).toMatchObject({
+      seat: 1,
+      to: 'table',
+      bot: true,
+    });
+  });
+
+  it('não tem chat no lobby', () => {
+    const t = setup();
+    t.service.create(ana, 's-ana');
+    expect(errorCode(() => t.service.chat(ana.userId, 'table', 'gg'))).toBe(
+      'INVALID_STATE',
+    );
+  });
+});

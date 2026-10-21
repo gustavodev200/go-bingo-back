@@ -26,6 +26,7 @@ import {
   gaudCallSchema,
   gaudRespondSchema,
   gaudFoldSchema,
+  gaudChatSchema,
   gaudTakeSeatSchema,
   gaudVisibilitySchema,
   userChannel,
@@ -50,7 +51,7 @@ interface SocketData {
 }
 type AnyEvents = { [event: string]: (...args: unknown[]) => void };
 type GaudSocket = Socket<AnyEvents, AnyEvents, AnyEvents, SocketData>;
-type Limit = 'default' | 'create';
+type Limit = 'default' | 'create' | 'chat';
 type AckError = Extract<Ack<never>, { ok: false }>;
 
 const LIMITS: Record<
@@ -59,6 +60,7 @@ const LIMITS: Record<
 > = {
   default: { suffix: '', limit: 10, windowMs: 1_000 },
   create: { suffix: ':create', limit: 3, windowMs: 10_000 },
+  chat: { suffix: ':chat', limit: 3, windowMs: 3_000 },
 };
 
 /**
@@ -371,6 +373,15 @@ export class GaudGateway
     return this.action(socket, gaudRespondSchema, body, (user, p) =>
       this.tables.respond(user.id, p.accept),
     );
+  }
+
+  /** Frase pronta (o texto livre não existe: nada para moderar). */
+  @SubscribeMessage(GaudClientEvents.CHAT)
+  onChat(@ConnectedSocket() socket: GaudSocket, @MessageBody() body: unknown) {
+    return this.handle(socket, 'chat', gaudChatSchema, body, (user, p) => {
+      this.tables.chat(user.id, p.to, p.key);
+      return Promise.resolve(null);
+    });
   }
 
   @SubscribeMessage(GaudClientEvents.FOLD)

@@ -69,14 +69,25 @@ export const envidoValue = (card: GaudCard): number =>
  * delas (a melhor dupla); sem naipe repetido vale a carta mais alta.
  */
 export function envidoPoints(cards: readonly GaudCard[]): number {
-  let best = Math.max(0, ...cards.map(envidoValue));
+  return envidoBest(cards).points;
+}
+
+/** Os pontos de envido e as cartas que os formam (a dupla do mesmo naipe, ou a carta mais alta). */
+export function envidoBest(cards: readonly GaudCard[]): {
+  points: number;
+  cards: GaudCard[];
+} {
+  let best: { points: number; cards: GaudCard[] } = { points: 0, cards: [] };
+  for (const c of cards)
+    if (envidoValue(c) > best.points || best.cards.length === 0)
+      best = { points: envidoValue(c), cards: [c] };
   for (let i = 0; i < cards.length; i++)
-    for (let j = i + 1; j < cards.length; j++)
-      if (cards[i].suit === cards[j].suit)
-        best = Math.max(
-          best,
-          20 + envidoValue(cards[i]) + envidoValue(cards[j]),
-        );
+    for (let j = i + 1; j < cards.length; j++) {
+      if (cards[i].suit !== cards[j].suit) continue;
+      const points = 20 + envidoValue(cards[i]) + envidoValue(cards[j]);
+      if (points > best.points || best.cards.length < 2)
+        best = { points, cards: [cards[i], cards[j]] };
+    }
   return best;
 }
 
@@ -336,6 +347,8 @@ export interface GaudActions {
   /** Pode aceitar (quiero) / fugir (não quero) o canto pendente. */
   canAccept: boolean;
   canDecline: boolean;
+  /** Por que o envido não está liberado agora (na 1ª rodada, antes de jogar), ou null. */
+  envidoNote: string | null;
 }
 
 /** Estado privado: só vai para o dono. */
@@ -344,6 +357,8 @@ export interface GaudPrivateHand {
   cards: GaudHandCard[];
   /** Pontos de envido das 3 cartas recebidas. */
   envido: number;
+  /** As cartas que formam esse envido (figuras 10, 11 e 12 valem zero). */
+  envidoCards: GaudCard[];
   /** Tem flor (só com a regra ligada). Cantar é opcional: jogar a 1ª carta sem cantar perde a flor. */
   flor: boolean;
   actions: GaudActions;
@@ -361,6 +376,62 @@ export interface GaudPublicRoom {
 }
 
 export const GAUD_PUBLIC_ROOMS_CHANNEL = 'gauderio-public-rooms';
+
+// ---------------------------------------------------------------------------
+// Chat rápido (frases prontas): com o parceiro (só a dupla vê) ou com a mesa.
+// A CPU responde olhando a própria mão: a parceira fala a verdade, a adversária blefa.
+// ---------------------------------------------------------------------------
+
+export const GAUD_CHAT_TEXT = {
+  first: 'Consegue fazer a primeira?',
+  cards: 'Tem carta?',
+  envido: 'Tem envido?',
+  flor: 'Tem flor?',
+  truco: 'Peço truco?',
+  low: 'Joga baixo que eu mato!',
+  kill: 'Mata essa!',
+  yes: 'Sim!',
+  no: 'Não.',
+  strong: 'Tenho carta!',
+  weak: 'Tô fraco.',
+  taunt: 'Vem que tem!',
+  nice: 'Boa jogada!',
+  hurry: 'Joga logo, tchê!',
+  gg: 'Bom jogo!',
+} as const;
+export type GaudChatKey = keyof typeof GAUD_CHAT_TEXT;
+/** Frases para o parceiro (só com duplas). */
+export const GAUD_TEAM_CHAT = [
+  'first',
+  'cards',
+  'envido',
+  'flor',
+  'truco',
+  'low',
+  'kill',
+  'yes',
+  'no',
+  'strong',
+  'weak',
+] as const satisfies readonly GaudChatKey[];
+/** Frases para a mesa toda. */
+export const GAUD_TABLE_CHAT = [
+  'taunt',
+  'nice',
+  'hurry',
+  'gg',
+  'cards',
+  'truco',
+] as const satisfies readonly GaudChatKey[];
+export type GaudChatTo = 'team' | 'table';
+
+export interface GaudChatMessage {
+  seat: GaudSeat;
+  to: GaudChatTo;
+  text: string;
+  /** Resposta da CPU (texto gerado pelo servidor). */
+  bot: boolean;
+}
 
 export interface GaudSnapshot {
   state: GaudRoomState;
@@ -393,6 +464,8 @@ export const GaudClientEvents = {
   CALL: 'gauderio:call',
   RESPOND: 'gauderio:respond',
   FOLD: 'gauderio:fold',
+  /** Frase pronta para o parceiro ou para a mesa. */
+  CHAT: 'gauderio:chat',
   SYNC: 'gauderio:sync',
   REMATCH: 'gauderio:rematch',
 } as const;
@@ -417,6 +490,7 @@ export const GaudServerEvents = {
   HAND_ENDED: 'gauderio:hand_ended',
   SCORE_UPDATED: 'gauderio:score_updated',
   MATCH_OVER: 'gauderio:match_over',
+  CHAT_MESSAGE: 'gauderio:chat_message',
   ROOM_CLOSED: 'gauderio:room_closed',
   ROOMS_UPDATED: 'gauderio:rooms_updated',
 } as const;
@@ -477,6 +551,10 @@ export const gaudRespondSchema = z.object({
   accept: z.boolean(),
 });
 export const gaudFoldSchema = z.object({ actionId: actionIdSchema });
+export const gaudChatSchema = z.discriminatedUnion('to', [
+  z.object({ to: z.literal('team'), key: z.enum(GAUD_TEAM_CHAT) }),
+  z.object({ to: z.literal('table'), key: z.enum(GAUD_TABLE_CHAT) }),
+]);
 
 export type GaudLeftReason = 'left' | 'expired' | 'removed';
 
@@ -529,6 +607,7 @@ export interface GaudServerEventPayloads {
   'gauderio:hand_ended': { seq: number } & GaudHandResult;
   'gauderio:score_updated': { seq: number; scores: [number, number] };
   'gauderio:match_over': { seq: number } & GaudMatchResult;
+  'gauderio:chat_message': GaudChatMessage;
   'gauderio:room_closed': { reason: 'empty' };
   'gauderio:rooms_updated': { rooms: GaudPublicRoom[] };
 }
@@ -552,6 +631,7 @@ export interface GaudClientAckData {
   'gauderio:call': null;
   'gauderio:respond': null;
   'gauderio:fold': null;
+  'gauderio:chat': null;
   'gauderio:sync': GaudSnapshot;
   'gauderio:rematch': null;
 }

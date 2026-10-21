@@ -6,7 +6,11 @@ import {
   gaudTeamOf,
   minStake,
   stakeLevel,
+  GAUD_CHAT_TEXT,
   type GaudCall,
+  type GaudChatKey,
+  type GaudChatMessage,
+  type GaudChatTo,
   type GaudLeftReason,
   type GaudMatchResult,
   type GaudPublicRoom,
@@ -25,6 +29,12 @@ import { RANDOM_INT, type RandomInt } from '../core/random';
 import { DRAW_TIMER, type DrawTimer } from '../game/draw-timer';
 import { generateRoomCode } from '../rooms/room-code';
 import { gaudBotAction, gaudBotFallback } from './engine/bot';
+import {
+  opponentReply,
+  partnerReply,
+  type GaudBotOrder,
+  type GaudBotReply,
+} from './engine/bot-chat';
 import { GaudMatch, type Announcement } from './engine/match';
 import { GAUD_PUBLISHER, type GaudPublisher } from './gauderio-publisher';
 
@@ -74,7 +84,14 @@ interface Room {
   botCount: number;
   /** Próxima ação de CPU agendada (decidida na hora em que dispara). */
   botTimer: unknown;
+  /** Pedidos do parceiro humano no chat ("joga baixo", "mata essa") para a próxima carta da CPU. */
+  botOrders: Map<GaudSeat, GaudBotOrder>;
+  /** Resposta da CPU no chat agendada. */
+  chatTimer: unknown;
 }
+
+/** A CPU "digita" antes de responder no chat. */
+const CHAT_REPLY_MS = 900;
 
 /**
  * Mesas de Truco Gaudério em memória, autoridade única. Tudo síncrono: dois
@@ -137,6 +154,8 @@ export class GaudRoomsService implements OnModuleDestroy {
       handTimer: undefined,
       botCount: 0,
       botTimer: undefined,
+      botOrders: new Map(),
+      chatTimer: undefined,
     };
     room.seats[0] = this.newSeat(player, socketId);
     this.rooms.set(code, room);
@@ -440,6 +459,89 @@ export class GaudRoomsService implements OnModuleDestroy {
     return !partner || partner.bot || partner.reconnectDeadline !== null;
   }
 
+  /**
+   * Frase pronta. Para o parceiro (duplas): só a dupla recebe; uma CPU parceira
+   * responde olhando a própria mão. Para a mesa: todos recebem e uma CPU
+   * adversária provoca (às vezes blefando).
+   */
+  chat(userId: string, to: GaudChatTo, key: GaudChatKey): void {
+    const room = this.requireRoom(userId);
+    this.requirePhase(room, 'PLAYING');
+    const seat = this.seatOf(room, userId)!;
+    const message: GaudChatMessage = {
+      seat,
+      to,
+      text: GAUD_CHAT_TEXT[key],
+      bot: false,
+    };
+    const match = room.match!;
+    if (to === 'team') {
+      if (room.settings.size !== 4)
+        throw new DomainError(
+          'INVALID_STATE',
+          'Conversa com o parceiro só nas duplas',
+        );
+      const partnerSeat = ((seat + 2) % 4) as GaudSeat;
+      this.sendToTeam(room, seat, message);
+      if (room.seats[partnerSeat]?.bot)
+        this.botSay(room, partnerSeat, 'team', () => {
+          const hand = match.privateView(partnerSeat);
+          const view = match.publicView();
+          return hand && view
+            ? partnerReply(key, partnerSeat, hand, view, this.random)
+            : { text: 'Depois a gente fala.' };
+        });
+      return;
+    }
+    this.publisher.toRoom(room.code, GaudServerEvents.CHAT_MESSAGE, message);
+    const opponent = room.seats.findIndex(
+      (s, i) => s?.bot && gaudTeamOf(i) !== gaudTeamOf(seat),
+    );
+    if (opponent >= 0)
+      this.botSay(room, opponent as GaudSeat, 'table', () => {
+        const hand = match.privateView(opponent as GaudSeat);
+        return hand ? opponentReply(key, hand, this.random) : { text: 'Bah!' };
+      });
+  }
+
+  private sendToTeam(room: Room, seat: GaudSeat, message: GaudChatMessage) {
+    for (const s of [seat, (seat + 2) % 4]) {
+      const player = room.seats[s];
+      if (player && !player.bot)
+        this.publisher.toUser(
+          player.userId,
+          GaudServerEvents.CHAT_MESSAGE,
+          message,
+        );
+    }
+  }
+
+  /** A CPU responde depois de um instante, com a mesa como estiver então. */
+  private botSay(
+    room: Room,
+    seat: GaudSeat,
+    to: GaudChatTo,
+    reply: () => GaudBotReply,
+  ): void {
+    this.timer.clear(room.chatTimer);
+    const match = room.match;
+    room.chatTimer = this.timer.set(() => {
+      room.chatTimer = undefined;
+      if (this.rooms.get(room.code) !== room || room.match !== match) return;
+      if (room.phase !== 'PLAYING') return;
+      const { text, order } = reply();
+      if (order) room.botOrders.set(seat, order);
+      const message: GaudChatMessage = { seat, to, text, bot: true };
+      if (to === 'team') this.sendToTeam(room, seat, message);
+      else
+        this.publisher.toRoom(
+          room.code,
+          GaudServerEvents.CHAT_MESSAGE,
+          message,
+        );
+    }, CHAT_REPLY_MS);
+  }
+
   fold(userId: string): void {
     this.matchAction(userId, (m, seat) => m.fold(seat));
   }
@@ -476,6 +578,7 @@ export class GaudRoomsService implements OnModuleDestroy {
       };
       this.settle(room, match.winner);
     } else if (match.phase === 'HAND_OVER') {
+      room.botOrders.clear();
       this.timer.clear(room.handTimer);
       room.handTimer = this.timer.set(() => {
         room.handTimer = undefined;
@@ -505,11 +608,23 @@ export class GaudRoomsService implements OnModuleDestroy {
       const size = room.settings.size;
       let out: Announcement[] | null;
       try {
-        out = gaudBotAction(match, size, isBot, this.random);
+        out = gaudBotAction(
+          match,
+          size,
+          isBot,
+          this.random,
+          (seat) => room.botOrders.get(seat) ?? null,
+        );
       } catch {
         out = gaudBotFallback(match, size, isBot);
       }
-      if (out) this.afterMatchChange(room, match, out);
+      if (out) {
+        // Um pedido do parceiro vale só para a próxima carta da CPU.
+        for (const a of out)
+          if (a.event === 'gauderio:card_played')
+            room.botOrders.delete(a.payload.seat);
+        this.afterMatchChange(room, match, out);
+      }
     }, CPU_THINK_MS);
   }
 
@@ -709,6 +824,7 @@ export class GaudRoomsService implements OnModuleDestroy {
   private clearTimers(room: Room): void {
     this.timer.clear(room.handTimer);
     this.timer.clear(room.botTimer);
+    this.timer.clear(room.chatTimer);
     for (const s of room.seats) if (s) this.timer.clear(s.expiryTimer);
   }
 }
