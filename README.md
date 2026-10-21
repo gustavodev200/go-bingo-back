@@ -1,4 +1,4 @@
-## Rodando o Go Bingo Back
+## Rodando o GoPlayers Back
 
 ```bash
 cp .env.example .env          # preencha SUPABASE_URL com o seu projeto
