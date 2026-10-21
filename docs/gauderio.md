@@ -22,8 +22,9 @@ autoridade única no servidor, estado em memória.
 - Carta escondida (da 2ª rodada em diante) não vale nada. Ir ao baralho (na sua vez) entrega o valor atual da mão.
 - **Truco** 2 → **Retruco** 3 → **Vale 4** 4, pedido na própria vez. Só a dupla que aceitou pode aumentar.
   Não quero entrega o valor anterior (1, 2 ou 3).
-- **Envido** (só na 1ª rodada, antes de jogar sua carta, e só com truco ainda não aceito; com 4 jogadores
-  só os dois últimos da rodada pedem). Pode responder a um primeiro "truco" ("o envido vem primeiro"): o
+- **Envido** (só na 1ª rodada, na sua vez e antes de jogar a sua carta, e só com truco ainda não aceito;
+  qualquer jogador, também nas duplas). Quando não dá para pedir, a mão privada traz o motivo (`actions.envidoNote`)
+  e as cartas que formam o envido (`envidoCards`; figuras 10, 11 e 12 valem zero). Pode responder a um primeiro "truco" ("o envido vem primeiro"): o
   truco fica esperando e volta depois do envido.
   Valores aceitos somam: Envido 2 (pode repetir uma vez), Real Envido 3, Falta Envido = falta
   (alvo − pontos de quem está ganhando). Não quero dá 1 no primeiro canto, ou a soma dos cantos anteriores
@@ -62,3 +63,10 @@ ações possíveis agora), e anúncios com `seq`: `hand_dealt`, `card_played`, `
 
 Variáveis opcionais: `GAUDERIO_RECONNECT_GRACE_MS` (60000), `GAUDERIO_HAND_PAUSE_MS` (2500),
 `GAUDERIO_MAX_ROOMS` (1000).
+
+## Chat rápido (`gauderio:chat`)
+
+Frases prontas (`GAUD_CHAT_TEXT`), sem texto livre. `to: 'team'` (só duplas) vai só para a dupla;
+`to: 'table'` para todos. Uma CPU parceira responde em ~0,9 s olhando a própria mão e a mesa ("Faço sim, tenho o
+Espadão!", "Tenho 31 de envido", "Pede que eu seguro!"); "Joga baixo que eu mato!" e "Mata essa!" mudam a próxima
+carta dela. Uma CPU adversária responde à mesa provocando, às vezes blefando. Limite: 3 frases a cada 3 s.

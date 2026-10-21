@@ -281,6 +281,17 @@ describe('GaudGateway (Socket.IO integration)', () => {
         cardId: card,
       }),
     ).resolves.toMatchObject({ ok: false });
+    await expect(
+      emit(other, 'gauderio:chat', { to: 'team', key: 'taunt' }),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'INVALID_PAYLOAD' } });
+    await ok(other, 'gauderio:chat', { to: 'table', key: 'nice' });
+    const said = await waitFor<{ text: string }>(
+      actor,
+      'gauderio:chat_message',
+      () => true,
+      0,
+    );
+    expect(said.text).toBe('Boa jogada!');
     await ok(other, 'gauderio:fold', { actionId: 'fold-0001' });
     const ended = await waitFor<{ points: number; reason: string }>(
       actor,

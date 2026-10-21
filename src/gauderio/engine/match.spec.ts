@@ -1,4 +1,5 @@
 import {
+  envidoBest,
   envidoPoints,
   florPoints,
   gaudStrength,
@@ -101,6 +102,17 @@ describe('cartas', () => {
     expect(envidoPoints(hand('10e', '12p', '11c'))).toBe(0);
     // Três do mesmo naipe: vale a melhor dupla.
     expect(envidoPoints(hand('7e', '6e', '5e'))).toBe(33);
+  });
+
+  it('figuras (10, 11, 12) valem zero no envido', () => {
+    expect(envidoPoints(hand('10e', '6e', '1c'))).toBe(26);
+    expect(envidoPoints(hand('10e', '11e', '1c'))).toBe(20);
+    expect(envidoPoints(hand('10e', '7e', '4c'))).toBe(27);
+    expect(envidoPoints(hand('10e', '11o', '12c'))).toBe(0);
+    expect(envidoBest(hand('10e', '7e', '4c')).cards).toEqual(
+      hand('10e', '7e'),
+    );
+    expect(envidoBest(hand('1p', '3e', '4o')).cards).toEqual(hand('4o'));
   });
 
   it('reconhece a flor e conta seus pontos', () => {
@@ -276,6 +288,20 @@ describe('GaudMatch mano a mano', () => {
     expect(view.phase).toBe('AWAITING_RESPONSE');
     m.respond(1, true);
     expect(m.publicView()!.trucoValue).toBe(2);
+  });
+
+  it('a mão privada mostra as cartas do envido e o motivo quando não dá para pedir', () => {
+    const m = match([['10e', '6e', '1c'], B]);
+    expect(m.privateView(0)!).toMatchObject({
+      envido: 26,
+      envidoCards: hand('10e', '6e'),
+    });
+    expect(m.privateView(0)!.actions.envidoNote).toBeNull();
+    m.call(0, 'truco');
+    m.respond(1, true);
+    expect(m.privateView(0)!.actions.envidoNote).toMatch(/truco aceito/);
+    play(m, 0, '1c');
+    expect(m.privateView(0)!.actions.envidoNote).toBeNull();
   });
 
   it('não tem envido depois de jogar a carta nem depois do truco aceito', () => {
@@ -461,11 +487,12 @@ describe('GaudMatch em duplas', () => {
     expect(m.publicView()!.cardsLeft).toEqual([2, 2, 2, 2]);
   });
 
-  it('só os dois últimos da primeira rodada pedem envido', () => {
+  it('qualquer um pede envido na sua vez, antes de jogar a carta', () => {
     const m = match(hands, FOUR);
-    expect(m.callError(0, 'envido')).toMatch(/dois últimos/);
+    expect(m.callError(0, 'envido')).toBeNull();
+    expect(m.privateView(1)!.actions.envidoNote).toMatch(/na sua vez/);
     play(m, 0, '3e');
-    expect(m.callError(1, 'envido')).toMatch(/dois últimos/);
+    expect(m.callError(1, 'envido')).toBeNull();
     play(m, 1, '4e');
     expect(m.callError(2, 'envido')).toBeNull();
     m.call(2, 'envido');

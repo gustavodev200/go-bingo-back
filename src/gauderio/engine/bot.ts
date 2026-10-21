@@ -7,6 +7,7 @@ import {
   type GaudSeat,
 } from '../../contracts';
 import type { RandomInt } from '../../core/random';
+import type { GaudBotOrder } from './bot-chat';
 import type { Announcement, GaudMatch } from './match';
 
 /** Strong cards: the four manilhas and the 3s (gaudStrength ≥ 10). */
@@ -31,6 +32,8 @@ export function gaudBotAction(
   seats: number,
   isBot: (seat: GaudSeat) => boolean,
   random: RandomInt,
+  /** O que o parceiro humano pediu no chat para a próxima carta desta CPU. */
+  orderOf: (seat: GaudSeat) => GaudBotOrder | null = () => null,
 ): Announcement[] | null {
   const view = match.publicView();
   if (!view || match.winner !== null) return null;
@@ -95,6 +98,15 @@ export function gaudBotAction(
       topSeat !== undefined && gaudTeamOf(topSeat) === team;
     const beats = sorted.filter((c) => gaudStrength(c.card) > top);
     if (!partnerWinning && beats.length > 0) card = beats[0];
+  }
+  const order = orderOf(seat);
+  if (order === 'low') card = sorted[0];
+  if (order === 'kill') {
+    const shown = round.plays.filter((p) => p.card && !p.hidden);
+    const top = Math.max(0, ...shown.map((p) => gaudStrength(p.card!)));
+    card =
+      sorted.find((c) => gaudStrength(c.card) > top) ??
+      sorted[sorted.length - 1];
   }
   return match.play(seat, card.id);
 }

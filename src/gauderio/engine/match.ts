@@ -1,4 +1,5 @@
 import {
+  envidoBest,
   envidoPoints,
   faltaPoints,
   florPoints,
@@ -384,9 +385,6 @@ export class GaudMatch {
     if (call !== 'envido' && call !== 'real_envido' && call !== 'falta_envido')
       return 'Canto inválido';
     if (hand.trucoValue > 1) return 'Depois do truco aceito não tem envido';
-    // Com 4 jogadores, só os dois últimos da primeira rodada pedem envido.
-    if (this.settings.size === 4 && hand.rounds[0].plays.length < 2)
-      return 'Com 4 jogadores, o envido é pedido pelos dois últimos a jogar';
     return this.envidoStartError(hand, seat);
   }
 
@@ -787,6 +785,7 @@ export class GaudMatch {
       handNumber: hand.number,
       cards: hand.cards[seat].map((c) => ({ id: c.id, card: { ...c.card } })),
       envido: envidoPoints(hand.dealt[seat]),
+      envidoCards: envidoBest(hand.dealt[seat]).cards.map((c) => ({ ...c })),
       flor: this.holdsFlor(hand, seat),
       actions: this.actionsOf(seat),
       votes: this.votesOf(hand, seat),
@@ -811,18 +810,37 @@ export class GaudMatch {
       calls: [],
       canAccept: false,
       canDecline: false,
+      envidoNote: null,
     };
     if (!hand) return none;
     const myTurn = hand.phase === 'AWAITING_PLAY' && hand.turn === seat;
     const canPlay = myTurn;
+    const calls = GAUD_CALLS.filter((c) => this.callError(seat, c) === null);
     return {
       canPlay,
       canHide: canPlay && hand.rounds.length > 1,
       canFold: myTurn,
-      calls: GAUD_CALLS.filter((c) => this.callError(seat, c) === null),
+      calls,
+      envidoNote: this.envidoNote(hand, seat, calls),
       canAccept: this.respondError(seat, true) === null,
       canDecline: this.respondError(seat, false) === null,
     };
+  }
+
+  /** Explica por que o envido não aparece enquanto ainda faz sentido pedir. */
+  private envidoNote(
+    hand: Hand,
+    seat: GaudSeat,
+    calls: readonly GaudCall[],
+  ): string | null {
+    if (calls.some((c) => gaudCallKind(c) === 'envido')) return null;
+    if (hand.envidoClosed || hand.rounds.length > 1) return null;
+    if (this.playedInFirstRound(hand, seat)) return null;
+    const pending = hand.pending;
+    if (pending?.kind === 'envido') return null;
+    if (!pending && hand.turn !== seat)
+      return 'O envido você pede na sua vez, antes de jogar a sua carta';
+    return this.callError(seat, 'envido');
   }
 
   // -------------------------------------------------------------------------
