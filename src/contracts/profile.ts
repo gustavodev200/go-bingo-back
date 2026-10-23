@@ -30,29 +30,97 @@ export function isNicknameAllowed(nickname: string): boolean {
 }
 
 /**
- * Personagens prontos do seletor (setas ← →). O back só conhece os ids; a aparência de cada um mora no front.
- * Nunca remover/renomear um id: perfis salvos apontam para ele.
+ * Boneco jogador (craque de futebol): o perfil guarda um código curto `<rosto><camisa><número>` — ex.: `afla10` =
+ * rosto "a", camisa do Flamengo, número 10 (`00` = sem número). O back só conhece os ids; cores, padrões e rostos
+ * moram no front. Nunca remover/renomear um id: perfis salvos apontam para ele (id desconhecido = boneco padrão).
  */
-export const CHARACTER_IDS = [
-  'c01',
-  'c02',
-  'c03',
-  'c04',
-  'c05',
-  'c06',
-  'c07',
-  'c08',
-  'c09',
-  'c10',
-  'c11',
-  'c12',
-  'c13',
-  'c14',
-  'c15',
-  'c16',
-  'c17',
+export const CHARACTER_FACES = [
+  'a',
+  'b',
+  'c',
+  'd',
+  'e',
+  'f',
+  'g',
+  'h',
+  'i',
+  'j',
+  'k',
+  'l',
 ] as const;
-export const characterSchema = z.enum(CHARACTER_IDS);
+export type CharacterFace = (typeof CHARACTER_FACES)[number];
+
+/** Camisas: 20 clubes da Série A 2026, internacionais, temáticas e originais da comunidade. */
+export const JERSEY_IDS = [
+  // Brasileirão Série A 2026
+  'fla',
+  'pal',
+  'cru',
+  'mir',
+  'flu',
+  'bah',
+  'bot',
+  'spa',
+  'rbb',
+  'cor',
+  'gre',
+  'vas',
+  'cam',
+  'san',
+  'int',
+  'cfc',
+  'cap',
+  'cha',
+  'rem',
+  'vit',
+  // internacionais
+  'rma',
+  'bar',
+  // temáticas (políticas, opcionais)
+  'lul',
+  'bol',
+  // originais da comunidade
+  'gpl',
+  'tub',
+  'vul',
+  'lob',
+] as const;
+export type JerseyId = (typeof JERSEY_IDS)[number];
+
+/** Número nas costas: 1..99; 0 = sem número. */
+export const MAX_BACK_NUMBER = 99;
+
+export interface CharacterConfig {
+  face: CharacterFace;
+  jersey: JerseyId;
+  number: number;
+}
+
+const CHARACTER_RE = /^([a-z])([a-z]{3})(\d{2})$/;
+
+export function parseCharacter(code: unknown): CharacterConfig | null {
+  if (typeof code !== 'string') return null;
+  const m = CHARACTER_RE.exec(code);
+  if (!m) return null;
+  const [, face, jersey, number] = m;
+  if (!(CHARACTER_FACES as readonly string[]).includes(face)) return null;
+  if (!(JERSEY_IDS as readonly string[]).includes(jersey)) return null;
+  return {
+    face: face as CharacterFace,
+    jersey: jersey as JerseyId,
+    number: Number(number),
+  };
+}
+
+export function encodeCharacter(c: CharacterConfig): string {
+  const n = Math.max(0, Math.min(MAX_BACK_NUMBER, Math.trunc(c.number)));
+  return `${c.face}${c.jersey}${n.toString().padStart(2, '0')}`;
+}
+
+export const characterSchema = z
+  .string()
+  .refine((v) => parseCharacter(v) !== null, 'Personagem inválido');
+/** Código do personagem (ver `parseCharacter`). */
 export type CharacterId = z.infer<typeof characterSchema>;
 
 export const updateProfileSchema = z
@@ -70,7 +138,7 @@ export const profileSchema = z.object({
   nickname: z.string().nullable(),
   isGuest: z.boolean(),
   /** Personagem escolhido; null = boneco derivado do id. Opcional: um front novo continua funcionando contra uma API anterior ao campo. */
-  character: characterSchema.nullish(),
+  character: characterSchema.nullish().catch(null),
   points: z.number().int(),
   coins: z.number().int().min(0),
   /** Moeda premium (ver contracts/diamonds). Opcional: front novo contra API anterior. */
