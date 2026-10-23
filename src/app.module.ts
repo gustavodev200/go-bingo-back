@@ -21,6 +21,7 @@ import { GauderioModule } from './gauderio/gauderio.module';
 import { GameModule } from './game/game.module';
 import { GuestsModule } from './guests/guests.module';
 import { HealthController } from './health/health.controller';
+import { PresenceModule } from './presence/presence.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { RankingModule } from './ranking/ranking.module';
 import { RoomsModule } from './rooms/rooms.module';
@@ -52,6 +53,7 @@ import { VoiceModule } from './voice/voice.module';
     GauderioModule,
     BjModule,
     VoiceModule,
+    PresenceModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: HttpThrottlerGuard }],

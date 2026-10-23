@@ -8,6 +8,7 @@ export * from './diamonds';
 export * from './domino';
 export * from './gauderio';
 export * from './infiltrado';
+export * from './presence';
 export * from './profile';
 export * from './room';
 export * from './snake';
