@@ -216,37 +216,37 @@ describe('ProfilesService.update', () => {
     prisma.profile.update.mockResolvedValue({
       ...row,
       nickname: 'Ana',
-      character: 'c07',
+      character: 'gfla10',
     });
     const service = new ProfilesService(prisma as unknown as PrismaService);
 
     const result = await service.update(
       { id: 'u1', isAnonymous: false },
-      { nickname: 'Ana', character: 'c07' },
+      { nickname: 'Ana', character: 'gfla10' },
     );
 
     expect(prisma.profile.update).toHaveBeenCalledTimes(1);
     expect(prisma.profile.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
-      data: { nickname: 'Ana', character: 'c07' },
+      data: { nickname: 'Ana', character: 'gfla10' },
     });
-    expect(result).toMatchObject({ nickname: 'Ana', character: 'c07' });
+    expect(result).toMatchObject({ nickname: 'Ana', character: 'gfla10' });
   });
 
   it('changes only the character, keeping the nickname', async () => {
     const prisma = makePrisma();
     prisma.profile.findUnique.mockResolvedValue(row);
-    prisma.profile.update.mockResolvedValue({ ...row, character: 'c02' });
+    prisma.profile.update.mockResolvedValue({ ...row, character: 'bpal09' });
     const service = new ProfilesService(prisma as unknown as PrismaService);
 
     await service.update(
       { id: 'u1', isAnonymous: false },
-      { character: 'c02' },
+      { character: 'bpal09' },
     );
 
     expect(prisma.profile.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
-      data: { character: 'c02' },
+      data: { character: 'bpal09' },
     });
   });
 

@@ -70,12 +70,12 @@ describe('ProfilesController', () => {
 
     const result = controller.update(user, {
       nickname: 'Novo',
-      character: 'c03',
+      character: 'ecor07',
     });
 
     expect(profiles.update).toHaveBeenCalledWith(user, {
       nickname: 'Novo',
-      character: 'c03',
+      character: 'ecor07',
     });
     return expect(result).resolves.toBe(dto);
   });
