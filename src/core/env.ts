@@ -154,6 +154,15 @@ const envSchema = z.object({
     .default(3_500),
   // Bomberman: rooms kept in memory at most (each runs a 30 Hz loop while playing).
   BOMBER_MAX_ROOMS: z.coerce.number().int().min(1).default(300),
+  // Futebol de botão: how long a disconnected player's seat stays reserved.
+  BOTAO_RECONNECT_GRACE_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(600_000)
+    .default(30_000),
+  // Futebol de botão: rooms kept in memory at most (each runs a 30 Hz loop while playing).
+  BOTAO_MAX_ROOMS: z.coerce.number().int().min(1).default(300),
   // Infiltrado: how long a disconnected player's seat stays reserved.
   INF_RECONNECT_GRACE_MS: z.coerce
     .number()

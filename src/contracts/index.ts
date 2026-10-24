@@ -2,6 +2,8 @@ export * from './arena';
 export * from './bingo';
 export * from './blackjack';
 export * from './bomber';
+export * from './botao';
+export * from './botao-physics';
 export * from './coins';
 export * from './damas';
 export * from './diamonds';
